@@ -186,39 +186,12 @@ if df_ing is not None:
         color_map = {ing: color_palette[idx % len(color_palette)] for idx, ing in enumerate(ingredientes_lista)}
 
         tab1, tab2, tab3 = st.tabs([
-            "Aporte por Ingrediente a Nutrientes",
             "Costo Total por Ingrediente",
+            "Aporte por Ingrediente a Nutrientes",
             "Costo por Unidad de Nutriente"
         ])
-
-        with tab1:
-            st.markdown("#### Aporte de cada ingrediente a cada nutriente (barras por nutriente)")
-            nut_tabs = st.tabs([nut for nut in nutrientes_seleccionados])
-            for i, nut in enumerate(nutrientes_seleccionados):
-                with nut_tabs[i]:
-                    valores = []
-                    for ing in ingredientes_seleccionados:
-                        valor = pd.to_numeric(df_formula.loc[df_formula["Ingrediente"] == ing, nut], errors="coerce").values[0]
-                        porc = df_formula[df_formula["Ingrediente"] == ing]["% Inclusión"].values[0]
-                        aporte = (valor * porc) / 100 if pd.notnull(valor) else 0
-                        valores.append(aporte)
-                    unidad = unidades_dict.get(nut, "")
-                    fig = go.Figure()
-                    fig.add_trace(go.Bar(
-                        x=ingredientes_seleccionados,
-                        y=valores,
-                        marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
-                        text=[f"{v:.2f}" for v in valores],
-                        textposition='auto'
-                    ))
-                    fig.update_layout(
-                        xaxis_title="Ingrediente",
-                        yaxis_title=f"Aporte de {nut} ({unidad})" if unidad else f"Aporte de {nut}",
-                        title=f"Aporte de cada ingrediente a {nut} ({unidad})" if unidad else f"Aporte de cada ingrediente a {nut}"
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-
-        with tab2:
+        
+         with tab1:
             st.markdown("#### Costo total aportado por cada ingrediente (USD/tonelada de dieta, proporcional)")
             costos = [
                 (row["precio"] * row["% Inclusión"] / 100) if pd.notnull(row["precio"]) else 0
@@ -244,8 +217,38 @@ if df_ing is not None:
             st.plotly_chart(fig2, use_container_width=True)
             st.markdown(f"**Costo total de la fórmula:** ${total_costo_ton:.2f} USD/tonelada")
             st.markdown("Cada barra muestra el costo y el porcentaje proporcional de cada ingrediente respecto al costo total de la dieta.")
-
-        with tab3:
+     
+       with tab2:
+    st.markdown("#### Aporte de cada ingrediente a cada nutriente (barras por nutriente)")
+    nut_tabs = st.tabs([nut for nut in nutrientes_seleccionados])
+    for i, nut in enumerate(nutrientes_seleccionados):
+        with nut_tabs[i]:
+            valores = []
+            for ing in ingredientes_seleccionados:
+                valor = pd.to_numeric(df_formula.loc[df_formula["Ingrediente"] == ing, nut], errors="coerce").values[0]
+                porc = df_formula[df_formula["Ingrediente"] == ing]["% Inclusión"].values[0]
+                aporte = (valor * porc) / 100 if pd.notnull(valor) else 0
+                valores.append(aporte)
+            unidad = unidades_dict.get(nut, "")
+            total_nut = tabla[nut].iloc[-1] if tabla[nut].iloc[-1] != 0 else 1
+            proporciones = [v / total_nut * 100 for v in valores]
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=ingredientes_seleccionados,
+                y=valores,
+                marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
+                text=[f"{v:.2f} {unidad}<br>{p:.1f}%" for v, p in zip(valores, proporciones)],
+                textposition='auto'
+            ))
+            fig.update_layout(
+                xaxis_title="Ingrediente",
+                yaxis_title=f"Aporte de {nut} ({unidad})" if unidad else f"Aporte de {nut}",
+                title=f"Aporte de cada ingrediente a {nut} ({unidad})" if unidad else f"Aporte de cada ingrediente a {nut}"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            st.markdown(f"**Total de {nut} en la dieta:** {tabla[nut].iloc[-1]:.4f} {unidad}")
+            
+       with tab3:
             st.markdown("#### Costo por unidad de nutriente aportada (USD/tonelada por unidad de nutriente)")
             nut_tabs = st.tabs([nut for nut in nutrientes_seleccionados])
             for i, nut in enumerate(nutrientes_seleccionados):
