@@ -148,19 +148,16 @@ if df_ing is not None:
         # --- TABLA MEJORADA: COSTO PROPORCIONAL Y SUMA TOTAL ---
         tabla = df_formula[["Ingrediente", "% Inclusión"]].copy()
 
-        # Costo proporcional de cada ingrediente según inclusión (USD/kg de dieta)
         tabla["Costo proporcional (USD/kg)"] = df_formula.apply(
             lambda row: row["precio"] * row["% Inclusión"] / 100 if pd.notnull(row["precio"]) else 0,
             axis=1
         )
 
-        # Cálculo de nutrientes aportados proporcionalmente
         for nut in nutrientes_seleccionados:
             tabla[nut] = df_formula.apply(
                 lambda row: pd.to_numeric(row[nut], errors="coerce") * row["% Inclusión"] / 100, axis=1
             )
 
-        # Suma total
         totales = {
             "Ingrediente": "Total en dieta",
             "% Inclusión": tabla["% Inclusión"].sum(),
@@ -171,7 +168,6 @@ if df_ing is not None:
 
         tabla = pd.concat([tabla, pd.DataFrame([totales])], ignore_index=True)
 
-        # Visualización con estilo
         def highlight_total(s):
             return ['background-color: #e3ecf7; font-weight: bold' if v == "Total en dieta" else '' for v in s]
 
@@ -181,11 +177,11 @@ if df_ing is not None:
             use_container_width=True
         )
 
-        # --- PESTAÑAS DE GRÁFICOS ---
         color_palette = px.colors.qualitative.Plotly
         color_map = {ing: color_palette[idx % len(color_palette)] for idx, ing in enumerate(ingredientes_lista)}
 
-             tab1, tab2, tab3 = st.tabs([
+        # Orden de pestañas: Costo total por ingrediente, Aporte por ingrediente a nutrientes, Costo por unidad de nutriente
+        tab1, tab2, tab3 = st.tabs([
             "Costo Total por Ingrediente",
             "Aporte por Ingrediente a Nutrientes",
             "Costo por Unidad de Nutriente"
