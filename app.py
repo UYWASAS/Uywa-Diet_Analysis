@@ -203,7 +203,7 @@ if df_ing is not None:
                 x=ingredientes_seleccionados,
                 y=costos_ton,
                 marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
-                text=[f"{c:.2f} USD/ton" for c in costos_ton],
+                text=[f"{c:.2f} USD/ton" for c in costos_ton],  # SOLO valor
                 textposition='auto',
                 customdata=proporciones,
                 hovertemplate='%{x}<br>Costo: %{y:.2f} USD/ton<br>Proporción: %{customdata:.2f}%<extra></extra>'
@@ -237,7 +237,7 @@ if df_ing is not None:
                         x=ingredientes_seleccionados,
                         y=valores,
                         marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
-                        text=[f"{v:.2f} {unidad}" for v in valores],
+                        text=[f"{v:.2f} {unidad}" for v in valores],  # SOLO valor
                         textposition='auto',
                         customdata=proporciones,
                         hovertemplate='%{x}<br>Aporte: %{y:.2f} ' + (unidad if unidad else '') + '<br>Proporción: %{customdata:.2f}%<extra></extra>',
