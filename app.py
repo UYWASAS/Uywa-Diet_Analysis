@@ -33,7 +33,6 @@ st.markdown("""
         border: none !important;
         box-shadow: none !important;
     }
-    /* Sidebar radio buttons y labels */
     .stRadio label, .stRadio div[role="radiogroup"] label, .stRadio div[role="radiogroup"] span {
         color: #fff !important;
         font-size: 18px !important;
@@ -150,7 +149,7 @@ if df_ing is not None:
         tabla = df_formula[["Ingrediente", "% Inclusión"]].copy()
 
         # Costo proporcional de cada ingrediente según inclusión (USD/kg de dieta)
-        tabla["Costo (USD/kg dieta)"] = df_formula.apply(
+        tabla["Costo proporcional (USD/kg)"] = df_formula.apply(
             lambda row: row["precio"] * row["% Inclusión"] / 100 if pd.notnull(row["precio"]) else 0,
             axis=1
         )
@@ -165,7 +164,7 @@ if df_ing is not None:
         totales = {
             "Ingrediente": "Total en dieta",
             "% Inclusión": tabla["% Inclusión"].sum(),
-            "Costo (USD/kg dieta)": tabla["Costo (USD/kg dieta)"].sum(),
+            "Costo proporcional (USD/kg)": tabla["Costo proporcional (USD/kg)"].sum(),
         }
         for nut in nutrientes_seleccionados:
             totales[nut] = tabla[nut].sum()
@@ -176,7 +175,7 @@ if df_ing is not None:
         def highlight_total(s):
             return ['background-color: #e3ecf7; font-weight: bold' if v == "Total en dieta" else '' for v in s]
 
-        st.subheader("Ingredientes y proporciones de tu dieta (aporte real y costo por inclusión)")
+        st.subheader("Ingredientes y proporciones de tu dieta (aporte real y costo proporcional)")
         st.dataframe(
             tabla.style.apply(highlight_total, subset=['Ingrediente']).format(precision=4),
             use_container_width=True
