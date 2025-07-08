@@ -190,8 +190,7 @@ if df_ing is not None:
             "Aporte por Ingrediente a Nutrientes",
             "Costo por Unidad de Nutriente"
         ])
-        
-         with tab1:
+        with tab1:
             st.markdown("#### Costo total aportado por cada ingrediente (USD/tonelada de dieta, proporcional)")
             costos = [
                 (row["precio"] * row["% Inclusión"] / 100) if pd.notnull(row["precio"]) else 0
@@ -217,8 +216,7 @@ if df_ing is not None:
             st.plotly_chart(fig2, use_container_width=True)
             st.markdown(f"**Costo total de la fórmula:** ${total_costo_ton:.2f} USD/tonelada")
             st.markdown("Cada barra muestra el costo y el porcentaje proporcional de cada ingrediente respecto al costo total de la dieta.")
-     
-       with tab2:
+     with tab2:
     st.markdown("#### Aporte de cada ingrediente a cada nutriente (barras por nutriente)")
     nut_tabs = st.tabs([nut for nut in nutrientes_seleccionados])
     for i, nut in enumerate(nutrientes_seleccionados):
@@ -247,8 +245,7 @@ if df_ing is not None:
             )
             st.plotly_chart(fig, use_container_width=True)
             st.markdown(f"**Total de {nut} en la dieta:** {tabla[nut].iloc[-1]:.4f} {unidad}")
-            
-       with tab3:
+        with tab3:
             st.markdown("#### Costo por unidad de nutriente aportada (USD/tonelada por unidad de nutriente)")
             nut_tabs = st.tabs([nut for nut in nutrientes_seleccionados])
             for i, nut in enumerate(nutrientes_seleccionados):
