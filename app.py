@@ -230,20 +230,23 @@ if df_ing is not None:
                     unidad = unidades_dict.get(nut, "")
                     total_nut = tabla[nut].iloc[-1] if tabla[nut].iloc[-1] != 0 else 1
                     proporciones = [round(v / total_nut * 100, 2) for v in valores]
+                    # SOLO el porcentaje visible, valor y porcentaje en hover
                     fig = go.Figure()
-    fig.add_trace(go.Bar(
-    x=ingredientes_seleccionados,
-    y=valores,
-    marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
-    text=[f"{p:.2f}%" for p in proporciones],  # SOLO porcentaje en la barra
-    textposition='auto',
-    hovertemplate='%{x}<br>Aporte: %{y:.2f} ' + (unidad if unidad else '') + '<br>Proporción: %{text}<extra></extra>'
-))
-fig.update_layout(
-    xaxis_title="Ingrediente",
-    yaxis_title=f"Aporte de {nut} ({unidad})" if unidad else f"Aporte de {nut}",
-    title=f"Aporte de cada ingrediente a {nut} ({unidad})" if unidad else f"Aporte de cada ingrediente a {nut}"
-)
+                    fig.add_trace(go.Bar(
+                        x=ingredientes_seleccionados,
+                        y=valores,
+                        marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
+                        text=[f"{p:.2f}%" for p in proporciones],
+                        textposition='auto',
+                        hovertemplate='%{x}<br>Aporte: %{y:.2f} ' + (unidad if unidad else '') + '<br>Proporción: %{text}<extra></extra>'
+                    ))
+                    fig.update_layout(
+                        xaxis_title="Ingrediente",
+                        yaxis_title=f"Aporte de {nut} ({unidad})" if unidad else f"Aporte de {nut}",
+                        title=f"Aporte de cada ingrediente a {nut} ({unidad})" if unidad else f"Aporte de cada ingrediente a {nut}"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                    st.markdown(f"**Total de {nut} en la dieta:** {tabla[nut].iloc[-1]:.2f} {unidad}")
 
         with tab3:
             st.markdown("#### Costo por unidad de nutriente aportada (USD/tonelada por unidad de nutriente)")
@@ -256,8 +259,11 @@ fig.update_layout(
                         aporte = pd.to_numeric(row[nut], errors="coerce")
                         aporte = round((aporte * row["% Inclusión"]) / 100, 2) if pd.notnull(aporte) else 0
                         costo = round((row["precio"] * row["% Inclusión"] / 100), 2) if pd.notnull(row["precio"]) else 0
-                        costo_unitario = round((costo / aporte), 2) if aporte > 0 else np.nan
-                        costo_unitario_ton = round(costo_unitario * 1000, 2) if not np.isnan(costo_unitario) else np.nan
+                        if aporte > 0:
+                            costo_unitario = round((costo / aporte), 2)
+                            costo_unitario_ton = round(costo_unitario * 1000, 2)
+                        else:
+                            costo_unitario_ton = 0.0
                         costos_unit.append(costo_unitario_ton)
                     unidad = unidades_dict.get(nut, "")
                     fig3 = go.Figure()
@@ -265,8 +271,9 @@ fig.update_layout(
                         x=ingredientes_seleccionados,
                         y=costos_unit,
                         marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
-                        text=[f"{c:.2f}" if not np.isnan(c) else "-" for c in costos_unit],
-                        textposition='auto'
+                        text=[f"{c:.2f}" for c in costos_unit],
+                        textposition='auto',
+                        hovertemplate='%{x}<br>Costo por unidad: %{y:.2f} USD/ton'
                     ))
                     fig3.update_layout(
                         xaxis_title="Ingrediente",
