@@ -68,7 +68,7 @@ with st.sidebar:
 
 st.title("Gestión y Análisis de Dietas")
 
-# ============ ANÁLISIS DE DIETA MEJORADO ÚNICO APARTADO =============
+# ============ ANÁLISIS DE DIETA ÚNICO APARTADO =============
 archivo_excel = "Ingredientes1.xlsx"
 df_ing = None
 unidades_dict = {}
@@ -146,34 +146,43 @@ if df_ing is not None:
     if ingredientes_seleccionados and nutrientes_seleccionados:
         df_formula = pd.DataFrame(data_formula)
 
-        # 1. Construcción de la tabla con aporte real
-        tabla = df_formula[["Ingrediente", "% Inclusión", "precio"]].copy()
+        # --- TABLA MEJORADA: COSTO PROPORCIONAL Y SUMA TOTAL ---
+        tabla = df_formula[["Ingrediente", "% Inclusión"]].copy()
+
+        # Costo proporcional de cada ingrediente según inclusión (USD/kg de dieta)
+        tabla["Costo (USD/kg dieta)"] = df_formula.apply(
+            lambda row: row["precio"] * row["% Inclusión"] / 100 if pd.notnull(row["precio"]) else 0,
+            axis=1
+        )
+
+        # Cálculo de nutrientes aportados proporcionalmente
         for nut in nutrientes_seleccionados:
             tabla[nut] = df_formula.apply(
                 lambda row: pd.to_numeric(row[nut], errors="coerce") * row["% Inclusión"] / 100, axis=1
             )
 
-        # 2. Fila total con la suma final del nutriente en la dieta (sin sumar precio)
+        # Suma total
         totales = {
             "Ingrediente": "Total en dieta",
             "% Inclusión": tabla["% Inclusión"].sum(),
-            "precio": np.nan,
+            "Costo (USD/kg dieta)": tabla["Costo (USD/kg dieta)"].sum(),
         }
         for nut in nutrientes_seleccionados:
             totales[nut] = tabla[nut].sum()
 
         tabla = pd.concat([tabla, pd.DataFrame([totales])], ignore_index=True)
 
-        # 3. Mejor formato visual: resaltar total
+        # Visualización con estilo
         def highlight_total(s):
             return ['background-color: #e3ecf7; font-weight: bold' if v == "Total en dieta" else '' for v in s]
-        st.subheader("Ingredientes y proporciones de tu dieta (aporte real por nutriente)")
+
+        st.subheader("Ingredientes y proporciones de tu dieta (aporte real y costo por inclusión)")
         st.dataframe(
             tabla.style.apply(highlight_total, subset=['Ingrediente']).format(precision=4),
             use_container_width=True
         )
 
-        # 4. PESTAÑAS DE GRÁFICOS
+        # --- PESTAÑAS DE GRÁFICOS ---
         color_palette = px.colors.qualitative.Plotly
         color_map = {ing: color_palette[idx % len(color_palette)] for idx, ing in enumerate(ingredientes_lista)}
 
