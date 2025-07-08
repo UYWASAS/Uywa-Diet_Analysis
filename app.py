@@ -149,31 +149,34 @@ if df_ing is not None:
         tabla = df_formula[["Ingrediente", "% Inclusión"]].copy()
 
         tabla["Costo proporcional (USD/kg)"] = df_formula.apply(
-            lambda row: row["precio"] * row["% Inclusión"] / 100 if pd.notnull(row["precio"]) else 0,
+            lambda row: round(row["precio"] * row["% Inclusión"] / 100, 2) if pd.notnull(row["precio"]) else 0,
             axis=1
         )
 
         for nut in nutrientes_seleccionados:
             tabla[nut] = df_formula.apply(
-                lambda row: pd.to_numeric(row[nut], errors="coerce") * row["% Inclusión"] / 100, axis=1
+                lambda row: round(pd.to_numeric(row[nut], errors="coerce") * row["% Inclusión"] / 100, 2), axis=1
             )
 
         totales = {
             "Ingrediente": "Total en dieta",
-            "% Inclusión": tabla["% Inclusión"].sum(),
-            "Costo proporcional (USD/kg)": tabla["Costo proporcional (USD/kg)"].sum(),
+            "% Inclusión": round(tabla["% Inclusión"].sum(), 2),
+            "Costo proporcional (USD/kg)": round(tabla["Costo proporcional (USD/kg)"].sum(), 2),
         }
         for nut in nutrientes_seleccionados:
-            totales[nut] = tabla[nut].sum()
+            totales[nut] = round(tabla[nut].sum(), 2)
 
         tabla = pd.concat([tabla, pd.DataFrame([totales])], ignore_index=True)
 
         def highlight_total(s):
             return ['background-color: #e3ecf7; font-weight: bold' if v == "Total en dieta" else '' for v in s]
 
+        # Formato con dos decimales para todas las columnas numéricas
+        fmt_dict = {col: "{:.2f}".format for col in tabla.columns if col != "Ingrediente"}
+
         st.subheader("Ingredientes y proporciones de tu dieta (aporte real y costo proporcional)")
         st.dataframe(
-            tabla.style.apply(highlight_total, subset=['Ingrediente']).format(precision=4),
+            tabla.style.apply(highlight_total, subset=['Ingrediente']).format(fmt_dict),
             use_container_width=True
         )
 
@@ -190,17 +193,17 @@ if df_ing is not None:
         with tab1:
             st.markdown("#### Costo total aportado por cada ingrediente (USD/tonelada de dieta, proporcional)")
             costos = [
-                (row["precio"] * row["% Inclusión"] / 100) if pd.notnull(row["precio"]) else 0
+                round((row["precio"] * row["% Inclusión"] / 100), 2) if pd.notnull(row["precio"]) else 0
                 for idx, row in df_formula.iterrows()
             ]
-            costos_ton = [c * 1000 for c in costos]
-            total_costo_ton = sum(costos_ton)
-            proporciones = [(c / total_costo_ton * 100) if total_costo_ton > 0 else 0 for c in costos_ton]
+            costos_ton = [round(c * 1000, 2) for c in costos]
+            total_costo_ton = round(sum(costos_ton), 2)
+            proporciones = [round((c / total_costo_ton * 100), 2) if total_costo_ton > 0 else 0 for c in costos_ton]
             fig2 = go.Figure([go.Bar(
                 x=ingredientes_seleccionados,
                 y=costos_ton,
                 marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
-                text=[f"{c:.2f} USD/ton<br>{p:.1f}%" for c, p in zip(costos_ton, proporciones)],
+                text=[f"{c:.2f} USD/ton<br>{p:.2f}%" for c, p in zip(costos_ton, proporciones)],
                 textposition='auto'
             )])
             fig2.update_layout(
@@ -222,17 +225,17 @@ if df_ing is not None:
                     for ing in ingredientes_seleccionados:
                         valor = pd.to_numeric(df_formula.loc[df_formula["Ingrediente"] == ing, nut], errors="coerce").values[0]
                         porc = df_formula[df_formula["Ingrediente"] == ing]["% Inclusión"].values[0]
-                        aporte = (valor * porc) / 100 if pd.notnull(valor) else 0
+                        aporte = round((valor * porc) / 100, 2) if pd.notnull(valor) else 0
                         valores.append(aporte)
                     unidad = unidades_dict.get(nut, "")
                     total_nut = tabla[nut].iloc[-1] if tabla[nut].iloc[-1] != 0 else 1
-                    proporciones = [v / total_nut * 100 for v in valores]
+                    proporciones = [round(v / total_nut * 100, 2) for v in valores]
                     fig = go.Figure()
                     fig.add_trace(go.Bar(
                         x=ingredientes_seleccionados,
                         y=valores,
                         marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
-                        text=[f"{v:.2f} {unidad}<br>{p:.1f}%" for v, p in zip(valores, proporciones)],
+                        text=[f"{v:.2f} {unidad}<br>{p:.2f}%" for v, p in zip(valores, proporciones)],
                         textposition='auto'
                     ))
                     fig.update_layout(
@@ -241,7 +244,7 @@ if df_ing is not None:
                         title=f"Aporte de cada ingrediente a {nut} ({unidad})" if unidad else f"Aporte de cada ingrediente a {nut}"
                     )
                     st.plotly_chart(fig, use_container_width=True)
-                    st.markdown(f"**Total de {nut} en la dieta:** {tabla[nut].iloc[-1]:.4f} {unidad}")
+                    st.markdown(f"**Total de {nut} en la dieta:** {tabla[nut].iloc[-1]:.2f} {unidad}")
 
         with tab3:
             st.markdown("#### Costo por unidad de nutriente aportada (USD/tonelada por unidad de nutriente)")
@@ -252,10 +255,10 @@ if df_ing is not None:
                     for ing in ingredientes_seleccionados:
                         row = df_formula[df_formula["Ingrediente"] == ing].iloc[0]
                         aporte = pd.to_numeric(row[nut], errors="coerce")
-                        aporte = (aporte * row["% Inclusión"]) / 100 if pd.notnull(aporte) else 0
-                        costo = (row["precio"] * row["% Inclusión"] / 100) if pd.notnull(row["precio"]) else 0
-                        costo_unitario = (costo / aporte) if aporte > 0 else np.nan
-                        costo_unitario_ton = costo_unitario * 1000 if not np.isnan(costo_unitario) else np.nan
+                        aporte = round((aporte * row["% Inclusión"]) / 100, 2) if pd.notnull(aporte) else 0
+                        costo = round((row["precio"] * row["% Inclusión"] / 100), 2) if pd.notnull(row["precio"]) else 0
+                        costo_unitario = round((costo / aporte), 2) if aporte > 0 else np.nan
+                        costo_unitario_ton = round(costo_unitario * 1000, 2) if not np.isnan(costo_unitario) else np.nan
                         costos_unit.append(costo_unitario_ton)
                     unidad = unidades_dict.get(nut, "")
                     fig3 = go.Figure()
@@ -263,7 +266,7 @@ if df_ing is not None:
                         x=ingredientes_seleccionados,
                         y=costos_unit,
                         marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
-                        text=[f"{c:.4f}" if not np.isnan(c) else "-" for c in costos_unit],
+                        text=[f"{c:.2f}" if not np.isnan(c) else "-" for c in costos_unit],
                         textposition='auto'
                     ))
                     fig3.update_layout(
