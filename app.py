@@ -230,15 +230,15 @@ if df_ing is not None:
                     unidad = unidades_dict.get(nut, "")
                     total_nut = tabla[nut].iloc[-1] if tabla[nut].iloc[-1] != 0 else 1
                     proporciones = [round(v / total_nut * 100, 2) for v in valores]
-                    # SOLO el porcentaje visible, valor y porcentaje en hover
                     fig = go.Figure()
                     fig.add_trace(go.Bar(
                         x=ingredientes_seleccionados,
                         y=valores,
                         marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
-                        text=[f"{p:.2f}%" for p in proporciones],
+                        text=[f"{v:.2f} {unidad}" for v in valores],  # Muestra valor nutriente
                         textposition='auto',
-                        hovertemplate='%{x}<br>Aporte: %{y:.2f} ' + (unidad if unidad else '') + '<br>Proporción: %{text}<extra></extra>'
+                        hovertemplate='%{x}<br>Aporte: %{y:.2f} ' + (unidad if unidad else '') + '<br>Proporción: %{customdata:.2f}%<extra></extra>',
+                        customdata=proporciones  # Proporcional en hover
                     ))
                     fig.update_layout(
                         xaxis_title="Ingrediente",
