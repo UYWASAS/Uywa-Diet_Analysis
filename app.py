@@ -70,10 +70,7 @@ with st.sidebar:
         "Selecciona una sección",
         [
             "Análisis de Dieta",
-            "Simulador Productivo",
-            "Simulador Económico",
-            "Comparador de Escenarios"
-        ],
+          ],
         key="menu_radio"
     )
 
