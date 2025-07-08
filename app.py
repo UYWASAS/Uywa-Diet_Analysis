@@ -203,8 +203,10 @@ if df_ing is not None:
                 x=ingredientes_seleccionados,
                 y=costos_ton,
                 marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
-                text=[f"{c:.2f} USD/ton<br>{p:.2f}%" for c, p in zip(costos_ton, proporciones)],
-                textposition='auto'
+                text=[f"{c:.2f} USD/ton" for c in costos_ton],  # SOLO valor absoluto en la barra
+                textposition='auto',
+                customdata=proporciones,
+                hovertemplate='%{x}<br>Costo: %{y:.2f} USD/ton<br>Proporción: %{customdata:.2f}%<extra></extra>'
             )])
             fig2.update_layout(
                 xaxis_title="Ingrediente",
@@ -235,10 +237,10 @@ if df_ing is not None:
                         x=ingredientes_seleccionados,
                         y=valores,
                         marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
-                        text=[f"{v:.2f} {unidad}" for v in valores],  # Muestra valor nutriente
+                        text=[f"{v:.2f} {unidad}" for v in valores],  # Valor absoluto en la barra
                         textposition='auto',
+                        customdata=proporciones,
                         hovertemplate='%{x}<br>Aporte: %{y:.2f} ' + (unidad if unidad else '') + '<br>Proporción: %{customdata:.2f}%<extra></extra>',
-                        customdata=proporciones  # Proporcional en hover
                     ))
                     fig.update_layout(
                         xaxis_title="Ingrediente",
@@ -254,6 +256,7 @@ if df_ing is not None:
             for i, nut in enumerate(nutrientes_seleccionados):
                 with nut_tabs[i]:
                     costos_unit = []
+                    total_costo_unit = 0
                     for ing in ingredientes_seleccionados:
                         row = df_formula[df_formula["Ingrediente"] == ing].iloc[0]
                         aporte = pd.to_numeric(row[nut], errors="coerce")
@@ -265,7 +268,9 @@ if df_ing is not None:
                         else:
                             costo_unitario_ton = 0.0
                         costos_unit.append(costo_unitario_ton)
+                        total_costo_unit += costo_unitario_ton
                     unidad = unidades_dict.get(nut, "")
+                    proporciones = [round((c / total_costo_unit * 100), 2) if total_costo_unit > 0 else 0 for c in costos_unit]
                     fig3 = go.Figure()
                     fig3.add_trace(go.Bar(
                         x=ingredientes_seleccionados,
@@ -273,7 +278,8 @@ if df_ing is not None:
                         marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
                         text=[f"{c:.2f}" for c in costos_unit],
                         textposition='auto',
-                        hovertemplate='%{x}<br>Costo por unidad: %{y:.2f} USD/ton'
+                        customdata=proporciones,
+                        hovertemplate='%{x}<br>Costo por unidad: %{y:.2f} USD/ton<br>Proporción: %{customdata:.2f}%<extra></extra>'
                     ))
                     fig3.update_layout(
                         xaxis_title="Ingrediente",
