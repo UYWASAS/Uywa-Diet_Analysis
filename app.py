@@ -86,14 +86,12 @@ def get_tabla_totales(tabla, nutrientes_seleccionados):
     return totales
 
 def get_val(esc, nut):
-    # Obtiene el valor total de un nutriente en una dieta
     if "tabla" in esc and nut in esc["tabla"]:
         vals = esc["tabla"][nut]
         return vals[-1] if isinstance(vals, list) and len(vals) > 0 else np.nan
     return np.nan
 
 def get_inclusion(esc, ing):
-    # Obtiene % inclusión de un ingrediente en el escenario
     if "tabla" in esc and "Ingrediente" in esc["tabla"] and "% Inclusión" in esc["tabla"]:
         ingr_list = esc["tabla"]["Ingrediente"]
         incl_list = esc["tabla"]["% Inclusión"]
