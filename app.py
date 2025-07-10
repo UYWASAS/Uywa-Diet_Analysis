@@ -8,7 +8,7 @@ import plotly.express as px
 
 st.set_page_config(page_title="Gestión y Análisis de Dietas", layout="wide")
 
-# --- FONDO CORPORATIVO Y SIDEBAR LEGIBLE ---
+# --- ESTILO CORPORATIVO ---
 st.markdown("""
     <style>
     html, body, .stApp, .main, .block-container {
@@ -34,14 +34,6 @@ st.markdown("""
         border: none !important;
         box-shadow: none !important;
     }
-    .stRadio label, .stRadio div[role="radiogroup"] label, .stRadio div[role="radiogroup"] span {
-        color: #fff !important;
-        font-size: 18px !important;
-        font-weight: 500 !important;
-    }
-    .stRadio div[role="radiogroup"] > div {
-        color: #fff !important;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -65,6 +57,8 @@ with st.sidebar:
         """,
         unsafe_allow_html=True
     )
+
+st.title("Gestión y Análisis de Dietas")
 
 # --- FUNCIONES AUXILIARES PARA ESCENARIOS ---
 def cargar_escenarios():
@@ -91,6 +85,120 @@ def get_tabla_totales(tabla, nutrientes_seleccionados):
         totales[nut] = round(tabla[nut].sum(), 2)
     return totales
 
+def get_val(esc, nut):
+    # Obtiene el valor total de un nutriente en una dieta
+    if "tabla" in esc and nut in esc["tabla"]:
+        vals = esc["tabla"][nut]
+        return vals[-1] if isinstance(vals, list) and len(vals) > 0 else np.nan
+    return np.nan
+
+def get_inclusion(esc, ing):
+    # Obtiene % inclusión de un ingrediente en el escenario
+    if "tabla" in esc and "Ingrediente" in esc["tabla"] and "% Inclusión" in esc["tabla"]:
+        ingr_list = esc["tabla"]["Ingrediente"]
+        incl_list = esc["tabla"]["% Inclusión"]
+        if ingr_list and ing in ingr_list:
+            idx = ingr_list.index(ing)
+            return incl_list[idx]
+    return 0
+
+def comparador_escenarios(escenarios):
+    st.header("Comparador de Escenarios Guardados")
+    if len(escenarios) < 2:
+        st.info("Guarda al menos dos escenarios en el análisis para comparar aquí.")
+        return
+
+    opciones = [esc["nombre"] for esc in escenarios]
+    seleccionados = st.multiselect(
+        "Selecciona escenarios para comparar", opciones, default=opciones[:2], key="comparador_escenarios_main"
+    )
+    escenarios_sel = [esc for esc in escenarios if esc["nombre"] in seleccionados]
+    if len(escenarios_sel) < 2:
+        st.info("Selecciona al menos dos escenarios para comparar.")
+        return
+
+    pesta1, pesta2, pesta3, pesta4 = st.tabs([
+        "Precio por Nutriente", "Composición Dieta", "Composición Ingredientes", "Dieta Completa"
+    ])
+
+    with pesta1:
+        nutrientes_disponibles = sorted(list({nut for esc in escenarios_sel for nut in esc["precio_promedio_nutriente"].keys()}))
+        nut_select = st.multiselect(
+            "Selecciona nutrientes a comparar",
+            nutrientes_disponibles,
+            default=nutrientes_disponibles,
+            key="nutrientes_comparador_precio"
+        )
+        if nut_select:
+            df_comp = pd.DataFrame({
+                esc["nombre"]: [esc["precio_promedio_nutriente"].get(nut, np.nan) for nut in nut_select]
+                for esc in escenarios_sel
+            }, index=nut_select)
+            st.dataframe(df_comp.style.highlight_min(axis=1, color='lightgreen').format("{:.4f}"), use_container_width=True)
+            fig = go.Figure()
+            for esc in escenarios_sel:
+                y_vals = [esc["precio_promedio_nutriente"].get(nut, 0) for nut in nut_select]
+                fig.add_trace(go.Bar(x=nut_select, y=y_vals, name=esc["nombre"]))
+            fig.update_layout(barmode='group', xaxis_title="Nutriente", yaxis_title="Precio por unidad (USD)")
+            st.plotly_chart(fig, use_container_width=True)
+
+    with pesta2:
+        nutrientes_disponibles = sorted(list({
+            nut for esc in escenarios_sel
+            for nut in esc.get("tabla", {}).keys()
+            if nut not in ["Ingrediente", "% Inclusión", "Costo proporcional (USD/kg)"]
+        }))
+        nut_select2 = st.multiselect(
+            "Selecciona nutrientes a comparar",
+            nutrientes_disponibles,
+            default=nutrientes_disponibles,
+            key="nutrientes_comparador_comp"
+        )
+        if nut_select2:
+            df_nut = pd.DataFrame({
+                esc["nombre"]: [get_val(esc, nut) for nut in nut_select2] for esc in escenarios_sel
+            }, index=nut_select2)
+            st.dataframe(df_nut.style.format("{:.2f}"), use_container_width=True)
+            fig = go.Figure()
+            for esc in escenarios_sel:
+                y_vals = [get_val(esc, nut) for nut in nut_select2]
+                fig.add_trace(go.Bar(x=nut_select2, y=y_vals, name=esc["nombre"]))
+            fig.update_layout(barmode='group', xaxis_title="Nutriente", yaxis_title="Valor en dieta")
+            st.plotly_chart(fig, use_container_width=True)
+
+    with pesta3:
+        ingredientes_disponibles = sorted(list({ing for esc in escenarios_sel for ing in esc.get("ingredientes", [])}))
+        ing_select = st.multiselect(
+            "Selecciona ingredientes a comparar",
+            ingredientes_disponibles,
+            default=ingredientes_disponibles,
+            key="ingredientes_comparador"
+        )
+        if ing_select:
+            df_ing = pd.DataFrame({
+                esc["nombre"]: [get_inclusion(esc, ing) for ing in ing_select] for esc in escenarios_sel
+            }, index=ing_select)
+            st.dataframe(df_ing.style.format("{:.2f}"), use_container_width=True)
+            fig = go.Figure()
+            for esc in escenarios_sel:
+                y_vals = [get_inclusion(esc, ing) for ing in ing_select]
+                fig.add_trace(go.Bar(x=ing_select, y=y_vals, name=esc["nombre"]))
+            fig.update_layout(barmode='group', xaxis_title="Ingrediente", yaxis_title="% Inclusión")
+            st.plotly_chart(fig, use_container_width=True)
+
+    with pesta4:
+        st.markdown("#### Costo total de cada escenario (USD/tonelada)")
+        costos = {esc["nombre"]: esc["costo_total"] for esc in escenarios_sel}
+        st.bar_chart(pd.Series(costos))
+        st.dataframe(pd.DataFrame({"Costo total (USD/ton)": costos}), use_container_width=True)
+        st.markdown("---")
+        st.subheader("Resumen rápido de escenarios comparados")
+        st.markdown(
+            "- Puedes comparar la eficiencia económica y nutricional de cada escenario de forma clara y rápida.\n"
+            "- El precio por unidad de nutriente refleja el costo real de producir ese nutriente en la dieta completa.\n"
+            "- La pestaña de composición te permite analizar cómo varían los niveles de nutrientes y la inclusión de ingredientes entre escenarios."
+        )
+
 # ============ ANÁLISIS DE DIETA Y ESCENARIOS =============
 archivo_excel = "Ingredientes1.xlsx"
 df_ing = None
@@ -116,7 +224,6 @@ else:
     else:
         st.warning("No se encontró el archivo Ingredientes1.xlsx. Sube uno para continuar.")
 
-# --- TABS PRINCIPALES ---
 tab1, tab2 = st.tabs(["Análisis y Escenarios", "Comparador de Escenarios"])
 
 with tab1:
@@ -124,7 +231,7 @@ with tab1:
     if df_ing is not None:
         ingredientes_lista = df_ing["Ingrediente"].dropna().unique().tolist()
         ingredientes_seleccionados = st.multiselect(
-            "Selecciona tus ingredientes", ingredientes_lista, default=[]
+            "Selecciona tus ingredientes", ingredientes_lista, default=[], key="ingredientes_tab1"
         )
 
         columnas_fijas = ["Ingrediente", "% Inclusión", "precio"]
@@ -132,7 +239,8 @@ with tab1:
         nutrientes_seleccionados = st.multiselect(
             "Selecciona nutrientes a analizar",
             columnas_nut,
-            default=columnas_nut[:4] if len(columnas_nut) >= 4 else columnas_nut
+            default=columnas_nut[:4] if len(columnas_nut) >= 4 else columnas_nut,
+            key="nutrientes_tab1"
         )
 
         data_formula = []
@@ -150,7 +258,7 @@ with tab1:
                     max_value=100.0,
                     value=0.0,
                     step=0.1,
-                    key=f"porc_{ing}"
+                    key=f"porc_{ing}_tab1"
                 )
             with cols[2]:
                 precio_kg = float(fila["precio"]) if "precio" in fila and pd.notnull(fila["precio"]) else 0.0
@@ -160,7 +268,7 @@ with tab1:
                     max_value=3000.0,
                     value=precio_kg * 1000,
                     step=1.0,
-                    key=f"precio_{ing}"
+                    key=f"precio_{ing}_tab1"
                 )
             total_inclusion += porcentaje
             fila["% Inclusión"] = porcentaje
@@ -174,7 +282,6 @@ with tab1:
         if ingredientes_seleccionados and nutrientes_seleccionados:
             df_formula = pd.DataFrame(data_formula)
 
-            # --- TABLA DE RESULTADOS ---
             tabla = df_formula[["Ingrediente", "% Inclusión"]].copy()
             tabla["Costo proporcional (USD/kg)"] = df_formula.apply(
                 lambda row: round(row["precio"] * row["% Inclusión"] / 100, 2) if pd.notnull(row["precio"]) else 0,
@@ -189,7 +296,6 @@ with tab1:
 
             def highlight_total(s):
                 return ['background-color: #e3ecf7; font-weight: bold' if v == "Total en dieta" else '' for v in s]
-
             fmt_dict = {col: "{:.2f}".format for col in tabla.columns if col != "Ingrediente"}
 
             st.subheader("Ingredientes y proporciones de tu dieta (aporte real y costo proporcional)")
@@ -357,96 +463,7 @@ with tab1:
                 st.success(f"Escenario '{nombre_escenario}' guardado exitosamente.")
         else:
             st.info("Selecciona ingredientes y nutrientes para comenzar el análisis y visualización.")
+
 with tab2:
-    st.header("Comparador de Escenarios Guardados")
     escenarios = cargar_escenarios()
-    if len(escenarios) < 2:
-        st.info("Guarda al menos dos escenarios en el análisis para comparar aquí.")
-    else:
-        opciones = [esc["nombre"] for esc in escenarios]
-        seleccionados = st.multiselect("Selecciona escenarios para comparar", opciones, default=opciones[:2], key="comparador_escenarios")
-        escenarios_sel = [esc for esc in escenarios if esc["nombre"] in seleccionados]
-        if len(escenarios_sel) < 2:
-            st.info("Selecciona al menos dos escenarios para comparar.")
-        else:
-            pesta1, pesta2, pesta3, pesta4 = st.tabs([
-                "Precio por Nutriente", "Composición Dieta", "Composición Ingredientes", "Dieta Completa"
-            ])
-
-            with pesta1:
-                # --- COMPARA PRECIO POR NUTRIENTE ---
-                nutrientes_disponibles = sorted(list({nut for esc in escenarios_sel for nut in esc["precio_promedio_nutriente"].keys()}))
-                nut_select = st.multiselect("Selecciona nutrientes a comparar", nutrientes_disponibles, default=nutrientes_disponibles)
-                if nut_select:
-                    df_comp = pd.DataFrame({
-                        esc["nombre"]: [esc["precio_promedio_nutriente"].get(nut, np.nan) for nut in nut_select]
-                        for esc in escenarios_sel
-                    }, index=nut_select)
-                    st.dataframe(df_comp.style.highlight_min(axis=1, color='lightgreen').format("{:.4f}"), use_container_width=True)
-                    fig = go.Figure()
-                    for esc in escenarios_sel:
-                        y_vals = [esc["precio_promedio_nutriente"].get(nut, 0) for nut in nut_select]
-                        fig.add_trace(go.Bar(x=nut_select, y=y_vals, name=esc["nombre"]))
-                    fig.update_layout(barmode='group', xaxis_title="Nutriente", yaxis_title="Precio por unidad (USD)")
-                    st.plotly_chart(fig, use_container_width=True)
-
-            with pesta2:
-                # --- COMPARA COMPOSICIÓN NUTRIENTES EN LA DIETA ---
-                nutrientes_disponibles = sorted(list({nut for esc in escenarios_sel for nut in esc.get("tabla", {}).keys() if nut not in ["Ingrediente", "% Inclusión", "Costo proporcional (USD/kg)"]}))
-                nut_select = st.multiselect("Selecciona nutrientes a comparar", nutrientes_disponibles, default=nutrientes_disponibles)
-                if nut_select:
-                    def get_val(esc, nut):
-                        if "tabla" in esc and nut in esc["tabla"]:
-                            vals = esc["tabla"][nut]
-                            return vals[-1] if isinstance(vals, list) and len(vals) > 0 else np.nan
-                        else:
-                            return np.nan
-                    df_nut = pd.DataFrame({
-                        esc["nombre"]: [get_val(esc, nut) for nut in nut_select] for esc in escenarios_sel
-                    }, index=nut_select)
-                    st.dataframe(df_nut.style.format("{:.2f}"), use_container_width=True)
-                    fig = go.Figure()
-                    for esc in escenarios_sel:
-                        y_vals = [get_val(esc, nut) for nut in nut_select]
-                        fig.add_trace(go.Bar(x=nut_select, y=y_vals, name=esc["nombre"]))
-                    fig.update_layout(barmode='group', xaxis_title="Nutriente", yaxis_title="Valor en dieta")
-                    st.plotly_chart(fig, use_container_width=True)
-
-            with pesta3:
-                # --- COMPARA COMPOSICIÓN DE INGREDIENTES ---
-                ingredientes_disponibles = sorted(list({ing for esc in escenarios_sel for ing in esc.get("ingredientes", [])}))
-                ing_select = st.multiselect("Selecciona ingredientes a comparar", ingredientes_disponibles, default=ingredientes_disponibles)
-                if ing_select:
-                    def get_inclusion(esc, ing):
-                        # Busca el % inclusión del ingrediente en ese escenario
-                        if "tabla" in esc and "Ingrediente" in esc["tabla"] and "% Inclusión" in esc["tabla"]:
-                            ingr_list = esc["tabla"]["Ingrediente"]
-                            incl_list = esc["tabla"]["% Inclusión"]
-                            if ingr_list and ing in ingr_list:
-                                idx = ingr_list.index(ing)
-                                return incl_list[idx]
-                        return 0
-                    df_ing = pd.DataFrame({
-                        esc["nombre"]: [get_inclusion(esc, ing) for ing in ing_select] for esc in escenarios_sel
-                    }, index=ing_select)
-                    st.dataframe(df_ing.style.format("{:.2f}"), use_container_width=True)
-                    fig = go.Figure()
-                    for esc in escenarios_sel:
-                        y_vals = [get_inclusion(esc, ing) for ing in ing_select]
-                        fig.add_trace(go.Bar(x=ing_select, y=y_vals, name=esc["nombre"]))
-                    fig.update_layout(barmode='group', xaxis_title="Ingrediente", yaxis_title="% Inclusión")
-                    st.plotly_chart(fig, use_container_width=True)
-
-            with pesta4:
-                # --- COMPARA COSTO TOTAL DE CADA ESCENARIO ---
-                st.markdown("#### Costo total de cada escenario (USD/tonelada)")
-                costos = {esc["nombre"]: esc["costo_total"] for esc in escenarios_sel}
-                st.bar_chart(pd.Series(costos))
-                st.dataframe(pd.DataFrame({"Costo total (USD/ton)": costos}), use_container_width=True)
-                
-            st.dataframe(df_val_nut.style.format("{:.2f}"), use_container_width=True)
-            st.markdown(
-                "- Puedes comparar la eficiencia económica y nutricional de cada escenario de forma clara y rápida.\n"
-                "- El precio por unidad de nutriente refleja el costo real de producir ese nutriente en la dieta completa, considerando todos los ingredientes y sus precios actuales.\n"
-                "- Usa esta herramienta para tomar decisiones basadas en datos y optimizar tus fórmulas ante cambios de mercado."
-            )
+    comparador_escenarios(escenarios)
