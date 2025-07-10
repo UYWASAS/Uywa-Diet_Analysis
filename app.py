@@ -66,16 +66,18 @@ with st.sidebar:
         unsafe_allow_html=True
     )
 
-st.title("Gestión y Análisis de Dietas")
-
 # --- FUNCIONES AUXILIARES PARA ESCENARIOS ---
 def cargar_escenarios():
-    if os.path.exists("escenarios_guardados.json"):
-        with open("escenarios_guardados.json", "r") as f:
-            return json.load(f)
-    return []
+    if "escenarios_guardados" not in st.session_state:
+        if os.path.exists("escenarios_guardados.json"):
+            with open("escenarios_guardados.json", "r") as f:
+                st.session_state.escenarios_guardados = json.load(f)
+        else:
+            st.session_state.escenarios_guardados = []
+    return st.session_state.escenarios_guardados
 
 def guardar_escenarios(escenarios):
+    st.session_state.escenarios_guardados = escenarios
     with open("escenarios_guardados.json", "w") as f:
         json.dump(escenarios, f)
 
@@ -339,7 +341,7 @@ with tab1:
             # --- GUARDAR ESCENARIO ---
             st.markdown("---")
             escenarios = cargar_escenarios()
-            nombre_escenario = st.text_input("Nombre para guardar este escenario", value="Escenario " + str(len(escenarios)+1))
+            nombre_escenario = st.text_input("Nombre para guardar este escenario", value="Escenario " + str(len(escenarios)+1), key="nombre_escenario")
             if st.button("Guardar escenario"):
                 escenario = {
                     "nombre": nombre_escenario,
@@ -363,7 +365,7 @@ with tab2:
         st.info("Guarda al menos dos escenarios en el análisis para comparar aquí.")
     else:
         opciones = [esc["nombre"] for esc in escenarios]
-        seleccionados = st.multiselect("Selecciona escenarios para comparar", opciones, default=opciones[:2])
+        seleccionados = st.multiselect("Selecciona escenarios para comparar", opciones, default=opciones[:2], key="comparador_escenarios")
         escenarios_sel = [esc for esc in escenarios if esc["nombre"] in seleccionados]
         if len(escenarios_sel) < 2:
             st.info("Selecciona al menos dos escenarios para comparar.")
