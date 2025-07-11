@@ -7,8 +7,8 @@ import plotly.graph_objs as go
 import plotly.express as px
 import openai  # pip install openai
 
-# Configura tu API Key (puedes ponerla en secrets.toml, o aquí directamente)
-openai.api_key = st.secrets.get("OPENAI_API_KEY", "") # O: os.getenv("OPENAI_API_KEY")
+# Configuración segura de la API Key de OpenAI usando Streamlit Secrets (NO se sube a GitHub)
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 st.set_page_config(page_title="Gestión y Análisis de Dietas", layout="wide")
 
@@ -41,7 +41,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- Función útil para redondear a 2 decimales ---
 def fmt2(x):
     try:
         return round(float(x), 2)
@@ -51,7 +50,6 @@ def fmt2(x):
 def fmt2_df(df):
     return df.applymap(fmt2)
 
-# --- Función para analizar con IA (actualizada para openai>=1.0.0) ---
 def analizar_escenario_con_ia(prompt, datos_escenario, modelo="gpt-3.5-turbo"):
     texto = f"{prompt}\n\nDatos del escenario:\n{datos_escenario}"
     try:
@@ -67,6 +65,7 @@ def analizar_escenario_con_ia(prompt, datos_escenario, modelo="gpt-3.5-turbo"):
         return response.choices[0].message.content
     except Exception as e:
         return f"Error al conectar con IA: {e}"
+
 with st.sidebar:
     st.image("nombre_archivo_logo.png", width=110)
     st.markdown(
@@ -419,7 +418,6 @@ def comparador_escenarios(escenarios):
             respuesta_ia = analizar_escenario_con_ia(prompt_final, resumen_final)
             st.markdown(f"**IA:** {respuesta_ia}")
 
-# ============ ANÁLISIS DE DIETA Y ESCENARIOS =============
 archivo_excel = "Ingredientes1.xlsx"
 df_ing = None
 unidades_dict = {}
@@ -635,7 +633,7 @@ with tab1:
                             text=[f"{fmt2(v)}" for v in valores],
                             textposition='auto',
                             customdata=porc_aporte,
-                            hovertemplate='%{x}<br>Aporte: %{y:.2f} {label}<br>Proporción aporte: %{customdata:.2f}%<extra></extra>',
+                            hovertemplate=f'%{{x}}<br>Aporte: %{{y:.2f}} {label}<br>Proporción aporte: %{{customdata:.2f}}%<extra></extra>',
                         ))
                         fig.update_layout(
                             xaxis_title="Ingrediente",
