@@ -60,7 +60,7 @@ with st.sidebar:
 
 st.title("Gestión y Análisis de Dietas")
 
-# --- FUNCIONES AUXILIARES PARA ESCENARIOS ---
+# --- FUNCIONES AUXILIARES ---
 def cargar_escenarios():
     if "escenarios_guardados" not in st.session_state:
         if os.path.exists("escenarios_guardados.json"):
@@ -201,7 +201,6 @@ def comparador_escenarios(escenarios):
                 })
                 min_idx = df_shadow[f"Precio por {manual_unit}"].idxmin()
                 df_shadow["Es el más barato"] = ["✅" if i == min_idx else "" for i in df_shadow.index]
-                st.dataframe(df_shadow.style.format({f"Precio por {manual_unit}": "{:.4f}"}), use_container_width=True)
                 bar_colors = ['green' if i == min_idx else 'royalblue' for i in range(len(df_shadow))]
                 fig_shadow = go.Figure()
                 fig_shadow.add_trace(go.Bar(
@@ -219,6 +218,7 @@ def comparador_escenarios(escenarios):
                     title=f"Precio sombra y costo por ingrediente para {nut}",
                 )
                 st.plotly_chart(fig_shadow, use_container_width=True)
+                st.dataframe(df_shadow.style.format({f"Precio por {manual_unit}": "{:.4f}"}), use_container_width=True)
                 st.markdown(
                     f"**El precio sombra de {nut} es el menor costo posible para obtener una unidad de este nutriente usando el ingrediente más barato en cada fórmula.**\n\n"
                     f"- Puedes ajustar la unidad para mejorar la visualización.\n"
@@ -271,7 +271,6 @@ def comparador_escenarios(escenarios):
                     "Escenario": esc_names,
                     f"{nut} ({manual_unit})": valores,
                 })
-                st.dataframe(df_nut.style.format({f"{nut} ({manual_unit})": "{:.2f}"}), use_container_width=True)
                 fig = go.Figure()
                 fig.add_trace(go.Bar(
                     x=esc_names,
@@ -287,6 +286,7 @@ def comparador_escenarios(escenarios):
                     title=f"Comparación de {nut} en cada escenario",
                 )
                 st.plotly_chart(fig, use_container_width=True)
+                st.dataframe(df_nut.style.format({f"{nut} ({manual_unit})": "{:.2f}"}), use_container_width=True)
                 st.markdown(
                     f"Puedes ajustar la unidad para comparar valores en la escala más adecuada para cada nutriente."
                 )
@@ -319,7 +319,6 @@ def comparador_escenarios(escenarios):
                     val = val * factor
                     valores[esc["nombre"]].append(val)
             df_ing = pd.DataFrame(valores, index=ing_select)
-            st.dataframe(df_ing.style.format("{:.2f}"), use_container_width=True)
             fig = go.Figure()
             for esc in escenarios_sel:
                 fig.add_trace(go.Bar(
@@ -337,6 +336,7 @@ def comparador_escenarios(escenarios):
                 title="Comparación de inclusión de ingredientes entre escenarios"
             )
             st.plotly_chart(fig, use_container_width=True)
+            st.dataframe(df_ing.style.format("{:.2f}"), use_container_width=True)
             st.markdown("Puedes ajustar la unidad para mostrar la inclusión de ingredientes en la escala más adecuada.")
 
     with pesta4:
@@ -480,13 +480,19 @@ with tab1:
                     for idx, row in df_formula.iterrows()
                 ]
                 total_costo = round(sum(costos), 2)
+                proporciones = [
+                    round(100 * row["% Inclusión"] / sum(df_formula["% Inclusión"]), 2)
+                    if sum(df_formula["% Inclusión"]) > 0 else 0
+                    for idx, row in df_formula.iterrows()
+                ]
                 fig2 = go.Figure([go.Bar(
                     x=ingredientes_seleccionados,
                     y=costos,
                     marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
                     text=[f"{c:.2f} {label}" for c in costos],
                     textposition='auto',
-                    hovertemplate=f'%{{x}}<br>Costo: %{{y:.2f}} {label}<extra></extra>'
+                    customdata=proporciones,
+                    hovertemplate='%{x}<br>Costo: %{y:.2f} {label}<br>Proporción dieta: %{customdata:.2f}%<extra></extra>'
                 )])
                 fig2.update_layout(
                     xaxis_title="Ingrediente",
@@ -499,6 +505,7 @@ with tab1:
                     "Ingrediente": ingredientes_seleccionados,
                     f"Costo aportado ({label})": costos,
                     "% Inclusión": [row["% Inclusión"] for idx, row in df_formula.iterrows()],
+                    "Proporción dieta (%)": proporciones,
                     "Precio ingrediente (USD/kg)": [row["precio"] for idx, row in df_formula.iterrows()],
                 })
                 st.dataframe(df_costos.style.format({f"Costo aportado ({label})": "{:.2f}"}), use_container_width=True)
@@ -524,18 +531,26 @@ with tab1:
                         )
                         factor, label = get_unit_factor(unit, manual_unit)
                         valores = []
+                        porc_aporte = []
+                        total_nut = sum([
+                            round(pd.to_numeric(df_formula.loc[df_formula["Ingrediente"] == ing, nut], errors="coerce").values[0] *
+                            df_formula[df_formula["Ingrediente"] == ing]["% Inclusión"].values[0] / 100 * factor, 2)
+                            if pd.notnull(df_formula.loc[df_formula["Ingrediente"] == ing, nut].values[0]) else 0
+                            for ing in ingredientes_seleccionados
+                        ])
                         for ing in ingredientes_seleccionados:
                             valor = pd.to_numeric(df_formula.loc[df_formula["Ingrediente"] == ing, nut], errors="coerce").values[0]
                             porc = df_formula[df_formula["Ingrediente"] == ing]["% Inclusión"].values[0]
                             aporte = round((valor * porc) / 100 * factor, 2) if pd.notnull(valor) else 0
                             valores.append(aporte)
+                            porc_aporte.append(round(100 * aporte / total_nut, 2) if total_nut > 0 else 0)
                         df_aporte = pd.DataFrame({
                             "Ingrediente": ingredientes_seleccionados,
                             f"Aporte de {nut} ({label})": valores,
                             "% Inclusión": [df_formula[df_formula["Ingrediente"] == ing]["% Inclusión"].values[0] for ing in ingredientes_seleccionados],
                             "Contenido por kg": [df_formula[df_formula["Ingrediente"] == ing][nut].values[0] for ing in ingredientes_seleccionados],
+                            f"Proporción aporte {nut} (%)": porc_aporte,
                         })
-                        st.dataframe(df_aporte.style.format({f"Aporte de {nut} ({label})": "{:.2f}"}), use_container_width=True)
                         fig = go.Figure()
                         fig.add_trace(go.Bar(
                             x=ingredientes_seleccionados,
@@ -543,7 +558,8 @@ with tab1:
                             marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
                             text=[f"{v:.2f}" for v in valores],
                             textposition='auto',
-                            hovertemplate=f'%{{x}}<br>Aporte: %{{y:.2f}} {label}<extra></extra>',
+                            customdata=porc_aporte,
+                            hovertemplate='%{x}<br>Aporte: %{y:.2f} {label}<br>Proporción aporte: %{customdata:.2f}%<extra></extra>',
                         ))
                         fig.update_layout(
                             xaxis_title="Ingrediente",
@@ -551,6 +567,7 @@ with tab1:
                             title=f"Aporte de cada ingrediente a {nut} ({label})"
                         )
                         st.plotly_chart(fig, use_container_width=True)
+                        st.dataframe(df_aporte.style.format({f"Aporte de {nut} ({label})": "{:.2f}"}), use_container_width=True)
                         st.markdown(
                             f"Puedes ajustar la unidad para visualizar el aporte en la escala más útil para tu análisis."
                         )
@@ -595,7 +612,6 @@ with tab1:
                         })
                         min_idx = df_shadow[f"Precio por {manual_unit}"].idxmin()
                         df_shadow["Es el más barato"] = ["✅" if i == min_idx else "" for i in df_shadow.index]
-                        st.dataframe(df_shadow.style.format({f"Precio por {manual_unit}": "{:.4f}"}), use_container_width=True)
                         bar_colors = ['green' if i == min_idx else 'royalblue' for i in range(len(df_shadow))]
                         fig_shadow = go.Figure()
                         fig_shadow.add_trace(go.Bar(
@@ -613,6 +629,7 @@ with tab1:
                             title=f"Precio sombra y costo por ingrediente para {nut}",
                         )
                         st.plotly_chart(fig_shadow, use_container_width=True)
+                        st.dataframe(df_shadow.style.format({f"Precio por {manual_unit}": "{:.4f}"}), use_container_width=True)
                         st.markdown(
                             f"**El precio sombra de {nut} es el menor costo posible para obtener una unidad de este nutriente usando el ingrediente más barato en la fórmula.**\n\n"
                             f"- Puedes ajustar la unidad para mejorar la visualización.\n"
