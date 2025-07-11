@@ -37,6 +37,18 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# --- Función útil para redondear a 2 decimales ---
+def fmt2(x):
+    # Si x es un float o int, lo redondea a dos decimales; si no, lo regresa igual
+    try:
+        return round(float(x), 2)
+    except:
+        return x
+
+def fmt2_df(df):
+    # Redondea todos los valores numéricos de un dataframe a dos decimales
+    return df.applymap(fmt2)
+
 with st.sidebar:
     st.image("nombre_archivo_logo.png", width=110)
     st.markdown(
@@ -78,17 +90,17 @@ def guardar_escenarios(escenarios):
 def get_tabla_totales(tabla, nutrientes_seleccionados):
     totales = {
         "Ingrediente": "Total en dieta",
-        "% Inclusión": round(tabla["% Inclusión"].sum(), 2),
-        "Costo proporcional (USD/kg)": round(tabla["Costo proporcional (USD/kg)"].sum(), 2),
+        "% Inclusión": fmt2(tabla["% Inclusión"].sum()),
+        "Costo proporcional (USD/kg)": fmt2(tabla["Costo proporcional (USD/kg)"].sum()),
     }
     for nut in nutrientes_seleccionados:
-        totales[nut] = round(tabla[nut].sum(), 2)
+        totales[nut] = fmt2(tabla[nut].sum())
     return totales
 
 def get_val(esc, nut):
     if "tabla" in esc and nut in esc["tabla"]:
         vals = esc["tabla"][nut]
-        return vals[-1] if isinstance(vals, list) and len(vals) > 0 else np.nan
+        return fmt2(vals[-1]) if isinstance(vals, list) and len(vals) > 0 else np.nan
     return np.nan
 
 def get_inclusion(esc, ing):
@@ -97,14 +109,17 @@ def get_inclusion(esc, ing):
         incl_list = esc["tabla"]["% Inclusión"]
         if ingr_list and ing in ingr_list:
             idx = ingr_list.index(ing)
-            return incl_list[idx]
+            return fmt2(incl_list[idx])
     return 0
 
 def unit_selector(label, options, default, key):
     return st.selectbox(label, options, index=options.index(default) if default in options else 0, key=key)
 
 def format_price(value, factor):
-    return value * factor if pd.notnull(value) else np.nan
+    try:
+        return fmt2(float(value) * factor)
+    except:
+        return value
 
 def format_label(unit, factor):
     if factor == 1:
@@ -176,8 +191,8 @@ def comparador_escenarios(escenarios):
                 for esc in escenarios_sel:
                     for i, ing in enumerate(esc["ingredientes"]):
                         row = esc["data_formula"][i]
-                        contenido = pd.to_numeric(row.get(nut, 0), errors="coerce")
-                        precio = row.get("precio", np.nan)
+                        contenido = fmt2(pd.to_numeric(row.get(nut, 0), errors="coerce"))
+                        precio = fmt2(row.get("precio", np.nan))
                         if pd.notnull(contenido) and contenido > 0 and pd.notnull(precio):
                             ingredientes.append(f"{ing} ({esc['nombre']})")
                             contenidos.append(contenido)
@@ -191,7 +206,7 @@ def comparador_escenarios(escenarios):
                     key=f"unit_selector_{nut}_shadow"
                 )
                 factor, label = get_unit_factor(unit, manual_unit)
-                precios_unit = [precio / contenido * factor if contenido > 0 else np.nan for precio, contenido in zip(precios_ing, contenidos)]
+                precios_unit = [fmt2(precio / contenido * factor) if contenido > 0 else np.nan for precio, contenido in zip(precios_ing, contenidos)]
                 df_shadow = pd.DataFrame({
                     "Ingrediente": ingredientes,
                     f"Precio por {manual_unit}": precios_unit,
@@ -207,10 +222,10 @@ def comparador_escenarios(escenarios):
                     x=df_shadow["Ingrediente"],
                     y=df_shadow[f"Precio por {manual_unit}"],
                     marker_color=bar_colors,
-                    text=[f"{v:.4f}" for v in df_shadow[f"Precio por {manual_unit}"]],
+                    text=[f"{fmt2(v)}" for v in df_shadow[f"Precio por {manual_unit}"]],
                     textposition='auto',
                     customdata=np.stack([df_shadow["Escenario"], df_shadow["Es el más barato"]], axis=-1),
-                    hovertemplate='%{x}<br>Escenario: %{customdata[0]}<br>Precio sombra: %{y:.4f} {label}<br>%{customdata[1]}<extra></extra>',
+                    hovertemplate='%{x}<br>Escenario: %{customdata[0]}<br>Precio sombra: %{y:.2f} {label}<br>%{customdata[1]}<extra></extra>',
                 ))
                 fig_shadow.update_layout(
                     xaxis_title="Ingrediente",
@@ -218,7 +233,7 @@ def comparador_escenarios(escenarios):
                     title=f"Precio sombra y costo por ingrediente para {nut}",
                 )
                 st.plotly_chart(fig_shadow, use_container_width=True)
-                st.dataframe(df_shadow.style.format({f"Precio por {manual_unit}": "{:.4f}"}), use_container_width=True)
+                st.dataframe(fmt2_df(df_shadow), use_container_width=True)
                 st.markdown(
                     f"**El precio sombra de {nut} es el menor costo posible para obtener una unidad de este nutriente usando el ingrediente más barato en cada fórmula.**\n\n"
                     f"- Puedes ajustar la unidad para mejorar la visualización.\n"
@@ -264,7 +279,7 @@ def comparador_escenarios(escenarios):
                 esc_names = []
                 for esc in escenarios_sel:
                     val = get_val(esc, nut)
-                    val = val * factor if pd.notnull(val) else np.nan
+                    val = fmt2(val * factor) if pd.notnull(val) else np.nan
                     valores.append(val)
                     esc_names.append(esc["nombre"])
                 df_nut = pd.DataFrame({
@@ -276,7 +291,7 @@ def comparador_escenarios(escenarios):
                     x=esc_names,
                     y=valores,
                     marker_color='dodgerblue',
-                    text=[f"{v:.2f}" for v in valores],
+                    text=[f"{fmt2(v)}" for v in valores],
                     textposition='auto',
                     hovertemplate=f'%{{x}}<br>{nut}: %{{y:.2f}} {manual_unit}<extra></extra>',
                 ))
@@ -286,7 +301,7 @@ def comparador_escenarios(escenarios):
                     title=f"Comparación de {nut} en cada escenario",
                 )
                 st.plotly_chart(fig, use_container_width=True)
-                st.dataframe(df_nut.style.format({f"{nut} ({manual_unit})": "{:.2f}"}), use_container_width=True)
+                st.dataframe(fmt2_df(df_nut), use_container_width=True)
                 st.markdown(
                     f"Puedes ajustar la unidad para comparar valores en la escala más adecuada para cada nutriente."
                 )
@@ -316,7 +331,7 @@ def comparador_escenarios(escenarios):
             for esc in escenarios_sel:
                 for ing in ing_select:
                     val = get_inclusion(esc, ing)
-                    val = val * factor
+                    val = fmt2(val * factor)
                     valores[esc["nombre"]].append(val)
             df_ing = pd.DataFrame(valores, index=ing_select)
             fig = go.Figure()
@@ -325,7 +340,7 @@ def comparador_escenarios(escenarios):
                     x=ing_select,
                     y=valores[esc["nombre"]],
                     name=esc["nombre"],
-                    text=[f"{v:.2f}" for v in valores[esc["nombre"]]],
+                    text=[f"{fmt2(v)}" for v in valores[esc["nombre"]]],
                     textposition='auto',
                     hovertemplate=f'%{{x}}<br>Inclusión: %{{y:.2f}} {manual_unit}<extra></extra>',
                 ))
@@ -336,14 +351,14 @@ def comparador_escenarios(escenarios):
                 title="Comparación de inclusión de ingredientes entre escenarios"
             )
             st.plotly_chart(fig, use_container_width=True)
-            st.dataframe(df_ing.style.format("{:.2f}"), use_container_width=True)
+            st.dataframe(fmt2_df(df_ing), use_container_width=True)
             st.markdown("Puedes ajustar la unidad para mostrar la inclusión de ingredientes en la escala más adecuada.")
 
     with pesta4:
         st.markdown("#### Costo total de cada escenario (USD/tonelada)")
-        costos = {esc["nombre"]: esc["costo_total"] for esc in escenarios_sel}
+        costos = {esc["nombre"]: fmt2(esc["costo_total"]) for esc in escenarios_sel}
         st.bar_chart(pd.Series(costos))
-        st.dataframe(pd.DataFrame({"Costo total (USD/ton)": costos}), use_container_width=True)
+        st.dataframe(fmt2_df(pd.DataFrame({"Costo total (USD/ton)": costos})), use_container_width=True)
         st.markdown("---")
         st.subheader("Resumen rápido de escenarios comparados")
         st.markdown(
@@ -419,16 +434,16 @@ with tab1:
                     f"Precio {ing} (USD/tonelada)",
                     min_value=0.0,
                     max_value=3000.0,
-                    value=precio_kg * 1000,
+                    value=fmt2(precio_kg * 1000),
                     step=1.0,
                     key=f"precio_{ing}_tab1"
                 )
             total_inclusion += porcentaje
-            fila["% Inclusión"] = porcentaje
-            fila["precio"] = precio_mod / 1000  # Guardamos en USD/kg para cálculos
+            fila["% Inclusión"] = fmt2(porcentaje)
+            fila["precio"] = fmt2(precio_mod / 1000)  # Guardamos en USD/kg para cálculos
             data_formula.append(fila)
 
-        st.markdown(f"#### Suma total de inclusión: **{total_inclusion:.2f}%**")
+        st.markdown(f"#### Suma total de inclusión: **{fmt2(total_inclusion)}%**")
         if abs(total_inclusion - 100) > 0.01:
             st.warning("La suma de los ingredientes no es 100%. Puede afectar el análisis final.")
 
@@ -437,12 +452,12 @@ with tab1:
 
             tabla = df_formula[["Ingrediente", "% Inclusión"]].copy()
             tabla["Costo proporcional (USD/kg)"] = df_formula.apply(
-                lambda row: round(row["precio"] * row["% Inclusión"] / 100, 2) if pd.notnull(row["precio"]) else 0,
+                lambda row: fmt2(row["precio"] * row["% Inclusión"] / 100) if pd.notnull(row["precio"]) else 0,
                 axis=1
             )
             for nut in nutrientes_seleccionados:
                 tabla[nut] = df_formula.apply(
-                    lambda row: round(pd.to_numeric(row[nut], errors="coerce") * row["% Inclusión"] / 100, 2), axis=1
+                    lambda row: fmt2(pd.to_numeric(row[nut], errors="coerce") * row["% Inclusión"] / 100), axis=1
                 )
             totales = get_tabla_totales(tabla, nutrientes_seleccionados)
             tabla = pd.concat([tabla, pd.DataFrame([totales])], ignore_index=True)
@@ -453,7 +468,7 @@ with tab1:
 
             st.subheader("Ingredientes y proporciones de tu dieta (aporte real y costo proporcional)")
             st.dataframe(
-                tabla.style.apply(highlight_total, subset=['Ingrediente']).format(fmt_dict),
+                fmt2_df(tabla).style.apply(highlight_total, subset=['Ingrediente']).format(fmt_dict),
                 use_container_width=True
             )
 
@@ -476,20 +491,20 @@ with tab1:
                 factor = 1 if manual_unit == 'USD/kg' else 1000
                 label = manual_unit
                 costos = [
-                    round((row["precio"] * row["% Inclusión"] / 100) * factor, 2) if pd.notnull(row["precio"]) else 0
+                    fmt2((row["precio"] * row["% Inclusión"] / 100) * factor) if pd.notnull(row["precio"]) else 0
                     for idx, row in df_formula.iterrows()
                 ]
-                total_costo = round(sum(costos), 2)
+                total_costo = fmt2(sum(costos))
+                suma_inclusion = fmt2(sum(df_formula["% Inclusión"]))
                 proporciones = [
-                    round(100 * row["% Inclusión"] / sum(df_formula["% Inclusión"]), 2)
-                    if sum(df_formula["% Inclusión"]) > 0 else 0
+                    fmt2(100 * row["% Inclusión"] / suma_inclusion) if suma_inclusion > 0 else 0
                     for idx, row in df_formula.iterrows()
                 ]
                 fig2 = go.Figure([go.Bar(
                     x=ingredientes_seleccionados,
                     y=costos,
                     marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
-                    text=[f"{c:.2f} {label}" for c in costos],
+                    text=[f"{fmt2(c)} {label}" for c in costos],
                     textposition='auto',
                     customdata=proporciones,
                     hovertemplate='%{x}<br>Costo: %{y:.2f} {label}<br>Proporción dieta: %{customdata:.2f}%<extra></extra>'
@@ -504,12 +519,12 @@ with tab1:
                 df_costos = pd.DataFrame({
                     "Ingrediente": ingredientes_seleccionados,
                     f"Costo aportado ({label})": costos,
-                    "% Inclusión": [row["% Inclusión"] for idx, row in df_formula.iterrows()],
+                    "% Inclusión": [fmt2(row["% Inclusión"]) for idx, row in df_formula.iterrows()],
                     "Proporción dieta (%)": proporciones,
-                    "Precio ingrediente (USD/kg)": [row["precio"] for idx, row in df_formula.iterrows()],
+                    "Precio ingrediente (USD/kg)": [fmt2(row["precio"]) for idx, row in df_formula.iterrows()],
                 })
-                st.dataframe(df_costos.style.format({f"Costo aportado ({label})": "{:.2f}"}), use_container_width=True)
-                st.markdown(f"**Costo total de la fórmula:** {total_costo:.2f} {label} (suma de los ingredientes). Puedes cambiar la unidad.")
+                st.dataframe(fmt2_df(df_costos), use_container_width=True)
+                st.markdown(f"**Costo total de la fórmula:** {fmt2(total_costo)} {label} (suma de los ingredientes). Puedes cambiar la unidad.")
 
             with subtab2:
                 unit_options = {
@@ -532,23 +547,23 @@ with tab1:
                         factor, label = get_unit_factor(unit, manual_unit)
                         valores = []
                         porc_aporte = []
-                        total_nut = sum([
-                            round(pd.to_numeric(df_formula.loc[df_formula["Ingrediente"] == ing, nut], errors="coerce").values[0] *
-                            df_formula[df_formula["Ingrediente"] == ing]["% Inclusión"].values[0] / 100 * factor, 2)
+                        total_nut = fmt2(sum([
+                            fmt2(pd.to_numeric(df_formula.loc[df_formula["Ingrediente"] == ing, nut], errors="coerce").values[0] *
+                            df_formula[df_formula["Ingrediente"] == ing]["% Inclusión"].values[0] / 100 * factor)
                             if pd.notnull(df_formula.loc[df_formula["Ingrediente"] == ing, nut].values[0]) else 0
                             for ing in ingredientes_seleccionados
-                        ])
+                        ]))
                         for ing in ingredientes_seleccionados:
                             valor = pd.to_numeric(df_formula.loc[df_formula["Ingrediente"] == ing, nut], errors="coerce").values[0]
                             porc = df_formula[df_formula["Ingrediente"] == ing]["% Inclusión"].values[0]
-                            aporte = round((valor * porc) / 100 * factor, 2) if pd.notnull(valor) else 0
+                            aporte = fmt2((valor * porc) / 100 * factor) if pd.notnull(valor) else 0
                             valores.append(aporte)
-                            porc_aporte.append(round(100 * aporte / total_nut, 2) if total_nut > 0 else 0)
+                            porc_aporte.append(fmt2(100 * aporte / total_nut) if total_nut > 0 else 0)
                         df_aporte = pd.DataFrame({
                             "Ingrediente": ingredientes_seleccionados,
                             f"Aporte de {nut} ({label})": valores,
-                            "% Inclusión": [df_formula[df_formula["Ingrediente"] == ing]["% Inclusión"].values[0] for ing in ingredientes_seleccionados],
-                            "Contenido por kg": [df_formula[df_formula["Ingrediente"] == ing][nut].values[0] for ing in ingredientes_seleccionados],
+                            "% Inclusión": [fmt2(df_formula[df_formula["Ingrediente"] == ing]["% Inclusión"].values[0]) for ing in ingredientes_seleccionados],
+                            "Contenido por kg": [fmt2(df_formula[df_formula["Ingrediente"] == ing][nut].values[0]) for ing in ingredientes_seleccionados],
                             f"Proporción aporte {nut} (%)": porc_aporte,
                         })
                         fig = go.Figure()
@@ -556,7 +571,7 @@ with tab1:
                             x=ingredientes_seleccionados,
                             y=valores,
                             marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
-                            text=[f"{v:.2f}" for v in valores],
+                            text=[f"{fmt2(v)}" for v in valores],
                             textposition='auto',
                             customdata=porc_aporte,
                             hovertemplate='%{x}<br>Aporte: %{y:.2f} {label}<br>Proporción aporte: %{customdata:.2f}%<extra></extra>',
@@ -567,7 +582,7 @@ with tab1:
                             title=f"Aporte de cada ingrediente a {nut} ({label})"
                         )
                         st.plotly_chart(fig, use_container_width=True)
-                        st.dataframe(df_aporte.style.format({f"Aporte de {nut} ({label})": "{:.2f}"}), use_container_width=True)
+                        st.dataframe(fmt2_df(df_aporte), use_container_width=True)
                         st.markdown(
                             f"Puedes ajustar la unidad para visualizar el aporte en la escala más útil para tu análisis."
                         )
@@ -596,10 +611,10 @@ with tab1:
                         precios_ing = []
                         for i, ing in enumerate(ingredientes_seleccionados):
                             row = df_formula[df_formula["Ingrediente"] == ing].iloc[0]
-                            contenido = pd.to_numeric(row.get(nut, 0), errors="coerce")
-                            precio = row.get("precio", np.nan)
+                            contenido = fmt2(pd.to_numeric(row.get(nut, 0), errors="coerce"))
+                            precio = fmt2(row.get("precio", np.nan))
                             if pd.notnull(contenido) and contenido > 0 and pd.notnull(precio):
-                                precios_unit.append(precio / contenido * factor)
+                                precios_unit.append(fmt2(precio / contenido * factor))
                             else:
                                 precios_unit.append(np.nan)
                             contenidos.append(contenido)
@@ -618,10 +633,10 @@ with tab1:
                             x=df_shadow["Ingrediente"],
                             y=df_shadow[f"Precio por {manual_unit}"],
                             marker_color=bar_colors,
-                            text=[f"{v:.4f}" for v in df_shadow[f"Precio por {manual_unit}"]],
+                            text=[f"{fmt2(v)}" for v in df_shadow[f"Precio por {manual_unit}"]],
                             textposition='auto',
                             customdata=np.stack([df_shadow["Es el más barato"]], axis=-1),
-                            hovertemplate=f'%{{x}}<br>Precio sombra: %{{y:.4f}} {label}<br>%{{customdata[0]}}<extra></extra>',
+                            hovertemplate=f'%{{x}}<br>Precio sombra: %{{y:.2f}} {label}<br>%{{customdata[0]}}<extra></extra>',
                         ))
                         fig_shadow.update_layout(
                             xaxis_title="Ingrediente",
@@ -629,7 +644,7 @@ with tab1:
                             title=f"Precio sombra y costo por ingrediente para {nut}",
                         )
                         st.plotly_chart(fig_shadow, use_container_width=True)
-                        st.dataframe(df_shadow.style.format({f"Precio por {manual_unit}": "{:.4f}"}), use_container_width=True)
+                        st.dataframe(fmt2_df(df_shadow), use_container_width=True)
                         st.markdown(
                             f"**El precio sombra de {nut} es el menor costo posible para obtener una unidad de este nutriente usando el ingrediente más barato en la fórmula.**\n\n"
                             f"- Puedes ajustar la unidad para mejorar la visualización.\n"
@@ -645,9 +660,9 @@ with tab1:
                     "ingredientes": ingredientes_seleccionados,
                     "nutrientes": nutrientes_seleccionados,
                     "data_formula": data_formula,
-                    "tabla": tabla.to_dict(),
+                    "tabla": fmt2_df(tabla).to_dict(),
                     "unidades_dict": unidades_dict,
-                    "costo_total": float(tabla["Costo proporcional (USD/kg)"].iloc[-1]) * 1000  # USD/ton,
+                    "costo_total": fmt2(float(tabla["Costo proporcional (USD/kg)"].iloc[-1]) * 1000),  # USD/ton,
                 }
                 escenarios.append(escenario)
                 guardar_escenarios(escenarios)
