@@ -116,30 +116,59 @@ def comparador_escenarios(escenarios):
         return
 
     pesta1, pesta2, pesta3, pesta4 = st.tabs([
-        "Precio por Nutriente", "Composición Dieta", "Composición Ingredientes", "Dieta Completa"
+        "Precio por Nutriente Sombra", "Composición Dieta", "Composición Ingredientes", "Dieta Completa"
     ])
 
+    # TAB 1: SHADOW PRICE
     with pesta1:
-        nutrientes_disponibles = sorted(list({nut for esc in escenarios_sel for nut in esc["precio_promedio_nutriente"].keys()}))
-        nut_select_1 = st.multiselect(
-            "Selecciona nutrientes a comparar",
-            nutrientes_disponibles,
-            default=nutrientes_disponibles,
-            key="nutrientes_comparador_precio_tab"
-        )
-        if nut_select_1:
-            df_comp = pd.DataFrame({
-                esc["nombre"]: [esc["precio_promedio_nutriente"].get(nut, np.nan) for nut in nut_select_1]
-                for esc in escenarios_sel
-            }, index=nut_select_1)
-            st.dataframe(df_comp.style.highlight_min(axis=1, color='lightgreen').format("{:.4f}"), use_container_width=True)
-            fig = go.Figure()
+        st.markdown("#### Precio sombra por nutriente (Shadow Price)")
+        nutrientes_disponibles = sorted(list({nut for esc in escenarios_sel for nut in esc["nutrientes"]}))
+        shadow_prices = {}
+        for nut in nutrientes_disponibles:
+            min_price = np.inf
+            best_ing = None
+            # Buscar entre todos los ingredientes de todos los escenarios seleccionados
             for esc in escenarios_sel:
-                y_vals = [esc["precio_promedio_nutriente"].get(nut, 0) for nut in nut_select_1]
-                fig.add_trace(go.Bar(x=nut_select_1, y=y_vals, name=esc["nombre"]))
-            fig.update_layout(barmode='group', xaxis_title="Nutriente", yaxis_title="Precio por unidad (USD)")
-            st.plotly_chart(fig, use_container_width=True)
+                for ing in esc["ingredientes"]:
+                    # Buscar el valor de contenido de nutriente y precio para este ingrediente en el escenario
+                    idx = esc["ingredientes"].index(ing)
+                    row = esc["data_formula"][idx]
+                    contenido = pd.to_numeric(row[nut], errors="coerce")
+                    precio = row["precio"]
+                    if pd.notnull(contenido) and contenido > 0 and pd.notnull(precio):
+                        price_per_unit = precio / contenido
+                        if price_per_unit < min_price:
+                            min_price = price_per_unit
+                            best_ing = f'{ing} ({esc["nombre"]})'
+            shadow_prices[nut] = (min_price if min_price!=np.inf else np.nan, best_ing)
+        unidad = [escenarios_sel[0]["nutrientes"].count(nut) and escenarios_sel[0]["nutrientes"] and escenarios_sel[0]["nutrientes"][0] for nut in nutrientes_disponibles] if escenarios_sel else []
+        df_shadow = pd.DataFrame({
+            "Nutriente": nutrientes_disponibles,
+            "Precio sombra (USD/unidad)": [shadow_prices[nut][0] for nut in nutrientes_disponibles],
+            "Ingrediente más barato": [shadow_prices[nut][1] for nut in nutrientes_disponibles],
+        })
+        st.dataframe(df_shadow.style.format({"Precio sombra (USD/unidad)": "{:.4f}"}), use_container_width=True)
+        fig_shadow = go.Figure()
+        fig_shadow.add_trace(go.Bar(
+            x=df_shadow["Nutriente"],
+            y=df_shadow["Precio sombra (USD/unidad)"],
+            text=[f"{v:.4f}" for v in df_shadow["Precio sombra (USD/unidad)"]],
+            marker_color='indigo',
+            textposition='auto',
+            hovertemplate='%{x}<br>Shadow price: %{y:.4f} USD/unidad<br>Mejor ingrediente: %{customdata}<extra></extra>',
+            customdata=df_shadow["Ingrediente más barato"],
+        ))
+        fig_shadow.update_layout(
+            xaxis_title="Nutriente",
+            yaxis_title="Precio sombra (USD/unidad)",
+            title="Precio sombra por nutriente (Shadow price)",
+        )
+        st.plotly_chart(fig_shadow, use_container_width=True)
+        st.markdown(
+            "El precio sombra por nutriente estima el costo mínimo teórico para obtener una unidad de cada nutriente en la dieta, usando el ingrediente más barato en cada caso."
+        )
 
+    # TAB 2: COMPOSICIÓN DIETA
     with pesta2:
         nutrientes_disponibles = sorted(list({
             nut for esc in escenarios_sel
@@ -164,6 +193,7 @@ def comparador_escenarios(escenarios):
             fig.update_layout(barmode='group', xaxis_title="Nutriente", yaxis_title="Valor en dieta")
             st.plotly_chart(fig, use_container_width=True)
 
+    # TAB 3: COMPOSICIÓN INGREDIENTES
     with pesta3:
         ingredientes_disponibles = sorted(list({ing for esc in escenarios_sel for ing in esc.get("ingredientes", [])}))
         ing_select = st.multiselect(
@@ -184,6 +214,7 @@ def comparador_escenarios(escenarios):
             fig.update_layout(barmode='group', xaxis_title="Ingrediente", yaxis_title="% Inclusión")
             st.plotly_chart(fig, use_container_width=True)
 
+    # TAB 4: COSTO TOTAL
     with pesta4:
         st.markdown("#### Costo total de cada escenario (USD/tonelada)")
         costos = {esc["nombre"]: esc["costo_total"] for esc in escenarios_sel}
@@ -193,7 +224,7 @@ def comparador_escenarios(escenarios):
         st.subheader("Resumen rápido de escenarios comparados")
         st.markdown(
             "- Puedes comparar la eficiencia económica y nutricional de cada escenario de forma clara y rápida.\n"
-            "- El precio por unidad de nutriente refleja el costo real de producir ese nutriente en la dieta completa.\n"
+            "- El precio sombra te permite estimar el costo mínimo teórico de cada nutriente en las fórmulas.\n"
             "- La pestaña de composición te permite analizar cómo varían los niveles de nutrientes y la inclusión de ingredientes entre escenarios."
         )
 
@@ -305,13 +336,13 @@ with tab1:
             color_palette = px.colors.qualitative.Plotly
             color_map = {ing: color_palette[idx % len(color_palette)] for idx, ing in enumerate(ingredientes_lista)}
 
-            subtab1, subtab2, subtab3, subtab4 = st.tabs([
+            subtab1, subtab2, subtab3 = st.tabs([
                 "Costo Total por Ingrediente",
                 "Aporte por Ingrediente a Nutrientes",
-                "Costo por Unidad de Nutriente (Ingrediente)",
-                "Precio Promedio por Nutriente (Dieta)"
+                "Precio Sombra por Nutriente (Shadow Price)"
             ])
 
+            # TAB 1: Costo por Ingrediente
             with subtab1:
                 st.markdown("#### Costo total aportado por cada ingrediente (USD/tonelada de dieta, proporcional)")
                 costos = [
@@ -340,6 +371,7 @@ with tab1:
                 st.markdown(f"**Costo total de la fórmula:** ${total_costo_ton:.2f} USD/tonelada")
                 st.markdown("Cada barra muestra el costo y el porcentaje proporcional de cada ingrediente respecto al costo total de la dieta.")
 
+            # TAB 2: Aporte por Ingrediente a Nutrientes
             with subtab2:
                 st.markdown("#### Aporte de cada ingrediente a cada nutriente (barras por nutriente)")
                 nut_tabs = st.tabs([nut for nut in nutrientes_seleccionados])
@@ -372,74 +404,50 @@ with tab1:
                         st.plotly_chart(fig, use_container_width=True)
                         st.markdown(f"**Total de {nut} en la dieta:** {tabla[nut].iloc[-1]:.2f} {unidad}")
 
+            # TAB 3: Shadow Price
             with subtab3:
-                st.markdown("#### Costo por unidad de nutriente aportada por ingrediente (cálculo solo referencial)")
-                nut_tabs = st.tabs([nut for nut in nutrientes_seleccionados])
-                for i, nut in enumerate(nutrientes_seleccionados):
-                    with nut_tabs[i]:
-                        costos_unit = []
-                        total_costo_unit = 0
-                        for ing in ingredientes_seleccionados:
-                            row = df_formula[df_formula["Ingrediente"] == ing].iloc[0]
-                            aporte = pd.to_numeric(row[nut], errors="coerce")
-                            aporte = round((aporte * row["% Inclusión"]) / 100, 2) if pd.notnull(aporte) else 0
-                            costo = round((row["precio"] * row["% Inclusión"] / 100), 2) if pd.notnull(row["precio"]) else 0
-                            if aporte > 0:
-                                costo_unitario = round((costo / aporte), 4)
-                                costo_unitario_ton = round(costo_unitario * 1000, 4)
-                            else:
-                                costo_unitario_ton = 0.0
-                            costos_unit.append(costo_unitario_ton)
-                            total_costo_unit += costo_unitario_ton
-                        unidad = unidades_dict.get(nut, "")
-                        proporciones = [round((c / total_costo_unit * 100), 2) if total_costo_unit > 0 else 0 for c in costos_unit]
-                        fig3 = go.Figure()
-                        fig3.add_trace(go.Bar(
-                            x=ingredientes_seleccionados,
-                            y=costos_unit,
-                            marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
-                            text=[f"{c:.4f}" for c in costos_unit],
-                            textposition='auto',
-                            customdata=proporciones,
-                            hovertemplate='%{x}<br>Costo por unidad: %{y:.4f} USD/ton<br>Proporción: %{customdata:.2f}%<extra></extra>'
-                        ))
-                        fig3.update_layout(
-                            xaxis_title="Ingrediente",
-                            yaxis_title=f"Costo por unidad de {nut} (USD/ton por {unidad})" if unidad else f"Costo por unidad de {nut} (USD/ton)",
-                            title=f"Costo por unidad de {nut} (USD/ton por {unidad})" if unidad else f"Costo por unidad de {nut} (USD/ton)"
-                        )
-                        st.plotly_chart(fig3, use_container_width=True)
-                st.info("Este cálculo es solo referencial, ya que el precio de cada ingrediente se reparte entre todos los nutrientes que aporta. Para comparar fórmulas utiliza el siguiente cálculo global.")
-
-            with subtab4:
-                st.markdown("#### Precio promedio por unidad de nutriente en la dieta (real, basado en el costo total)")
-                precio_promedio_nutriente = {}
-                costo_total = tabla["Costo proporcional (USD/kg)"].iloc[-1] * 1000  # USD/ton
+                st.markdown("#### Precio sombra por nutriente (Shadow Price)")
+                shadow_prices = {}
                 for nut in nutrientes_seleccionados:
-                    total_nut = tabla[nut].iloc[-1]
-                    if total_nut > 0:
-                        precio_unit = costo_total / total_nut
-                    else:
-                        precio_unit = 0
-                    precio_promedio_nutriente[nut] = precio_unit
-
-                fig_dieta = go.Figure()
-                fig_dieta.add_trace(go.Bar(
-                    x=list(precio_promedio_nutriente.keys()),
-                    y=list(precio_promedio_nutriente.values()),
-                    marker_color='mediumseagreen',
-                    text=[f"{v:.4f}" for v in precio_promedio_nutriente.values()],
+                    min_price = np.inf
+                    best_ing = None
+                    for ing in ingredientes_seleccionados:
+                        row = df_formula[df_formula["Ingrediente"] == ing].iloc[0]
+                        contenido = pd.to_numeric(row[nut], errors="coerce")
+                        precio = row["precio"]
+                        if pd.notnull(contenido) and contenido > 0 and pd.notnull(precio):
+                            price_per_unit = precio / contenido
+                            if price_per_unit < min_price:
+                                min_price = price_per_unit
+                                best_ing = ing
+                    shadow_prices[nut] = (min_price if min_price!=np.inf else np.nan, best_ing)
+                unidad = [unidades_dict.get(nut, "") for nut in nutrientes_seleccionados]
+                df_shadow = pd.DataFrame({
+                    "Nutriente": nutrientes_seleccionados,
+                    "Precio sombra (USD/unidad)": [shadow_prices[nut][0] for nut in nutrientes_seleccionados],
+                    "Ingrediente más barato": [shadow_prices[nut][1] for nut in nutrientes_seleccionados],
+                    "Unidad": unidad,
+                })
+                st.dataframe(df_shadow.style.format({"Precio sombra (USD/unidad)": "{:.4f}"}), use_container_width=True)
+                fig_shadow = go.Figure()
+                fig_shadow.add_trace(go.Bar(
+                    x=df_shadow["Nutriente"],
+                    y=df_shadow["Precio sombra (USD/unidad)"],
+                    text=[f"{v:.4f}" for v in df_shadow["Precio sombra (USD/unidad)"]],
+                    marker_color='indigo',
                     textposition='auto',
-                    hovertemplate='%{x}<br>Precio: %{y:.4f} USD por unidad<extra></extra>'
+                    hovertemplate='%{x}<br>Shadow price: %{y:.4f} USD/%{customdata}<br>Mejor ingrediente: %{customdata2}<extra></extra>',
+                    customdata=df_shadow["Unidad"],
+                    customdata2=df_shadow["Ingrediente más barato"],
                 ))
-                fig_dieta.update_layout(
+                fig_shadow.update_layout(
                     xaxis_title="Nutriente",
-                    yaxis_title="Precio por unidad de nutriente (USD)",
-                    title="Precio promedio de cada nutriente en la dieta"
+                    yaxis_title="Precio sombra (USD/unidad)",
+                    title="Precio sombra por nutriente (Shadow price)",
                 )
-                st.plotly_chart(fig_dieta, use_container_width=True)
+                st.plotly_chart(fig_shadow, use_container_width=True)
                 st.markdown(
-                    "Este es el valor real para comparar entre fórmulas: cuánto cuesta producir una unidad de cada nutriente, dado el costo global de la dieta y su composición."
+                    "El precio sombra por nutriente estima el costo mínimo teórico para obtener una unidad de cada nutriente en la dieta, usando el ingrediente más barato en cada caso."
                 )
 
             # --- GUARDAR ESCENARIO ---
@@ -453,7 +461,7 @@ with tab1:
                     "nutrientes": nutrientes_seleccionados,
                     "data_formula": data_formula,
                     "tabla": tabla.to_dict(),
-                    "precio_promedio_nutriente": precio_promedio_nutriente,
+                    "precio_promedio_nutriente": {},  # no usado
                     "costo_total": float(tabla["Costo proporcional (USD/kg)"].iloc[-1]) * 1000  # USD/ton,
                 }
                 escenarios.append(escenario)
