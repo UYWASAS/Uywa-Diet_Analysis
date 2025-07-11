@@ -5,6 +5,10 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objs as go
 import plotly.express as px
+import openai  # pip install openai
+
+# Configura tu API Key (puedes ponerla en secrets.toml, o aquí directamente)
+openai.api_key = st.secrets.get("OPENAI_API_KEY", "") # O: os.getenv("OPENAI_API_KEY")
 
 st.set_page_config(page_title="Gestión y Análisis de Dietas", layout="wide")
 
@@ -39,15 +43,30 @@ st.markdown("""
 
 # --- Función útil para redondear a 2 decimales ---
 def fmt2(x):
-    # Si x es un float o int, lo redondea a dos decimales; si no, lo regresa igual
     try:
         return round(float(x), 2)
     except:
         return x
 
 def fmt2_df(df):
-    # Redondea todos los valores numéricos de un dataframe a dos decimales
     return df.applymap(fmt2)
+
+# --- Función para analizar con IA ---
+def analizar_escenario_con_ia(prompt, datos_escenario, modelo="gpt-3.5-turbo"):
+    texto = f"{prompt}\n\nDatos del escenario:\n{datos_escenario}"
+    try:
+        respuesta = openai.ChatCompletion.create(
+            model=modelo,
+            messages=[
+                {"role": "system", "content": "Eres un experto en nutrición animal, análisis comparativo y formulación de dietas. Explica de forma clara y concreta."},
+                {"role": "user", "content": texto}
+            ],
+            max_tokens=600,
+            temperature=0.7
+        )
+        return respuesta.choices[0].message.content
+    except Exception as e:
+        return f"Error al conectar con IA: {e}"
 
 with st.sidebar:
     st.image("nombre_archivo_logo.png", width=110)
@@ -164,7 +183,8 @@ def comparador_escenarios(escenarios):
     pesta1, pesta2, pesta3, pesta4 = st.tabs([
         "Precio por Nutriente Sombra", "Composición Dieta", "Composición Ingredientes", "Dieta Completa"
     ])
-
+    # IA: resumen del escenario actual seleccionado
+    resumen_comparador = ""
     with pesta1:
         st.markdown("#### Precio sombra por nutriente (Shadow Price)")
         nutrientes_disponibles = sorted(list({nut for esc in escenarios_sel for nut in esc["nutrientes"]}))
@@ -239,6 +259,15 @@ def comparador_escenarios(escenarios):
                     f"- Puedes ajustar la unidad para mejorar la visualización.\n"
                     f"- El ingrediente marcado con ✅ aporta el precio sombra."
                 )
+                resumen_comparador += f"\n\nShadow price {nut}:\n{df_shadow.to_csv(index=False)}"
+
+        # Interacción IA para shadow price
+        st.markdown("---")
+        st.markdown("### Análisis automático con IA")
+        prompt_shadow = st.text_area("Consulta para IA sobre shadow price", value="Genera un análisis experto del precio sombra y su relevancia en estos escenarios.")
+        if st.button("Analizar con IA - Shadow Price"):
+            respuesta_ia = analizar_escenario_con_ia(prompt_shadow, resumen_comparador)
+            st.markdown(f"**IA:** {respuesta_ia}")
 
     with pesta2:
         nutrientes_disponibles = sorted(list({
@@ -265,6 +294,7 @@ def comparador_escenarios(escenarios):
             'unidad': ['unidad', '100 unidades', '1000 unidades', 'kg', 'ton'],
         }
         nut_tabs = st.tabs(nut_select_2)
+        resumen_comparador = ""
         for i, nut in enumerate(nut_select_2):
             with nut_tabs[i]:
                 unit = unidades_dict.get(nut, "unidad")
@@ -305,6 +335,14 @@ def comparador_escenarios(escenarios):
                 st.markdown(
                     f"Puedes ajustar la unidad para comparar valores en la escala más adecuada para cada nutriente."
                 )
+                resumen_comparador += f"\n\nComparación nutriente {nut}:\n{df_nut.to_csv(index=False)}"
+
+        st.markdown("---")
+        st.markdown("### Análisis automático con IA")
+        prompt_comp = st.text_area("Consulta para IA sobre la composición y comparación de nutrientes", value="¿Qué escenarios resultan más óptimos y por qué?")
+        if st.button("Analizar con IA - Composición Dieta"):
+            respuesta_ia = analizar_escenario_con_ia(prompt_comp, resumen_comparador)
+            st.markdown(f"**IA:** {respuesta_ia}")
 
     with pesta3:
         ingredientes_disponibles = sorted(list({ing for esc in escenarios_sel for ing in esc.get("ingredientes", [])}))
@@ -325,6 +363,7 @@ def comparador_escenarios(escenarios):
             key="unit_selector_inclusion_comp"
         )
         factor, label = get_unit_factor('%', manual_unit)
+        resumen_comparador = ""
         if ing_select:
             esc_names = []
             valores = {esc["nombre"]: [] for esc in escenarios_sel}
@@ -353,6 +392,14 @@ def comparador_escenarios(escenarios):
             st.plotly_chart(fig, use_container_width=True)
             st.dataframe(fmt2_df(df_ing), use_container_width=True)
             st.markdown("Puedes ajustar la unidad para mostrar la inclusión de ingredientes en la escala más adecuada.")
+            resumen_comparador += f"\n\nComparación de inclusión de ingredientes:\n{df_ing.to_csv(index=False)}"
+
+        st.markdown("---")
+        st.markdown("### Análisis automático con IA")
+        prompt_ing = st.text_area("Consulta para IA sobre la comparación de ingredientes", value="¿Qué ingredientes marcan diferencias clave entre los escenarios?")
+        if st.button("Analizar con IA - Composición Ingredientes"):
+            respuesta_ia = analizar_escenario_con_ia(prompt_ing, resumen_comparador)
+            st.markdown(f"**IA:** {respuesta_ia}")
 
     with pesta4:
         st.markdown("#### Costo total de cada escenario (USD/tonelada)")
@@ -366,6 +413,12 @@ def comparador_escenarios(escenarios):
             "- El precio sombra te permite estimar el costo mínimo teórico de cada nutriente en las fórmulas.\n"
             "- Las pestañas permiten ajustar la unidad y comparar valores en la escala más útil para tu análisis."
         )
+        # IA para resumen del comparador
+        prompt_final = st.text_area("Consulta para IA sobre el resumen de escenarios comparados", value="Genera un informe comparativo y recomendaciones finales según los escenarios presentados.")
+        resumen_final = f"Resumen comparativo de costos:\n{pd.DataFrame({'Costo total (USD/ton)':costos}).to_csv(index=True)}"
+        if st.button("Analizar con IA - Resumen Comparador"):
+            respuesta_ia = analizar_escenario_con_ia(prompt_final, resumen_final)
+            st.markdown(f"**IA:** {respuesta_ia}")
 
 # ============ ANÁLISIS DE DIETA Y ESCENARIOS =============
 archivo_excel = "Ingredientes1.xlsx"
@@ -440,7 +493,7 @@ with tab1:
                 )
             total_inclusion += porcentaje
             fila["% Inclusión"] = fmt2(porcentaje)
-            fila["precio"] = fmt2(precio_mod / 1000)  # Guardamos en USD/kg para cálculos
+            fila["precio"] = fmt2(precio_mod / 1000)
             data_formula.append(fila)
 
         st.markdown(f"#### Suma total de inclusión: **{fmt2(total_inclusion)}%**")
@@ -480,6 +533,7 @@ with tab1:
                 "Aporte por Ingrediente a Nutrientes",
                 "Precio Sombra por Nutriente (Shadow Price)"
             ])
+            resumen_escenario = ""
 
             with subtab1:
                 manual_unit = unit_selector(
@@ -525,6 +579,14 @@ with tab1:
                 })
                 st.dataframe(fmt2_df(df_costos), use_container_width=True)
                 st.markdown(f"**Costo total de la fórmula:** {fmt2(total_costo)} {label} (suma de los ingredientes). Puedes cambiar la unidad.")
+                resumen_escenario += f"\n\nCosto total por ingrediente:\n{df_costos.to_csv(index=False)}"
+
+                st.markdown("---")
+                st.markdown("### Análisis automático con IA")
+                prompt_esc1 = st.text_area("Consulta para IA sobre el costo total por ingrediente", value="Analiza la eficiencia económica y posibles mejoras en la selección de ingredientes de este escenario.")
+                if st.button("Analizar con IA - Costo Total Ingrediente"):
+                    respuesta_ia = analizar_escenario_con_ia(prompt_esc1, resumen_escenario)
+                    st.markdown(f"**IA:** {respuesta_ia}")
 
             with subtab2:
                 unit_options = {
@@ -586,6 +648,14 @@ with tab1:
                         st.markdown(
                             f"Puedes ajustar la unidad para visualizar el aporte en la escala más útil para tu análisis."
                         )
+                        resumen_escenario += f"\n\nAporte de {nut}:\n{df_aporte.to_csv(index=False)}"
+
+                st.markdown("---")
+                st.markdown("### Análisis automático con IA")
+                prompt_esc2 = st.text_area("Consulta para IA sobre el aporte por ingrediente a nutrientes", value="Describe el aporte de nutrientes por ingrediente y posibles ajustes a la dieta.")
+                if st.button("Analizar con IA - Aporte Nutrientes"):
+                    respuesta_ia = analizar_escenario_con_ia(prompt_esc2, resumen_escenario)
+                    st.markdown(f"**IA:** {respuesta_ia}")
 
             with subtab3:
                 unit_options = {
@@ -650,6 +720,14 @@ with tab1:
                             f"- Puedes ajustar la unidad para mejorar la visualización.\n"
                             f"- El ingrediente marcado con ✅ aporta el precio sombra."
                         )
+                        resumen_escenario += f"\n\nShadow price {nut}:\n{df_shadow.to_csv(index=False)}"
+
+                st.markdown("---")
+                st.markdown("### Análisis automático con IA")
+                prompt_esc3 = st.text_area("Consulta para IA sobre el precio sombra", value="Interpreta el precio sombra de los nutrientes y su impacto en el costo de la dieta.")
+                if st.button("Analizar con IA - Shadow Price"):
+                    respuesta_ia = analizar_escenario_con_ia(prompt_esc3, resumen_escenario)
+                    st.markdown(f"**IA:** {respuesta_ia}")
 
             st.markdown("---")
             escenarios = cargar_escenarios()
@@ -662,7 +740,7 @@ with tab1:
                     "data_formula": data_formula,
                     "tabla": fmt2_df(tabla).to_dict(),
                     "unidades_dict": unidades_dict,
-                    "costo_total": fmt2(float(tabla["Costo proporcional (USD/kg)"].iloc[-1]) * 1000),  # USD/ton,
+                    "costo_total": fmt2(float(tabla["Costo proporcional (USD/kg)"].iloc[-1]) * 1000),
                 }
                 escenarios.append(escenario)
                 guardar_escenarios(escenarios)
