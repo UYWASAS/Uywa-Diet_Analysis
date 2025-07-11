@@ -9,7 +9,7 @@ import requests
 
 # ---- Configuración de Hugging Face Inference API ----
 HF_TOKEN = st.secrets["HF_TOKEN"]
-HF_MODEL_URL = "https://api-inference.huggingface.co/models/openai-community/gpt2"  # Puedes cambiar el modelo aquí (por ejemplo, mistralai/Mistral-7B-Instruct-v0.2)
+HF_MODEL_URL = "https://huggingface.co/openai-community/gpt2"  # Puedes cambiar el modelo aquí (por ejemplo, mistralai/Mistral-7B-Instruct-v0.2)
 HF_HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 def analizar_escenario_con_ia(prompt, datos_escenario):
