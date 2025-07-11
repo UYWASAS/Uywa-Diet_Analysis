@@ -5,10 +5,29 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objs as go
 import plotly.express as px
-import openai  # pip install openai
+import requests
 
-# Configuración segura de la API Key de OpenAI usando Streamlit Secrets (NO se sube a GitHub)
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+# ---- Configuración de Hugging Face Inference API ----
+HF_TOKEN = st.secrets["HF_TOKEN"]
+HF_MODEL_URL = "https://api-inference.huggingface.co/models/gpt2"  # Puedes cambiar el modelo aquí (por ejemplo, mistralai/Mistral-7B-Instruct-v0.2)
+HF_HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"}
+
+def analizar_escenario_con_ia(prompt, datos_escenario):
+    texto = f"{prompt}\n\nDatos del escenario:\n{datos_escenario}"
+    payload = {"inputs": texto, "parameters": {"max_length": 200}}
+    try:
+        response = requests.post(HF_MODEL_URL, headers=HF_HEADERS, json=payload, timeout=30)
+        respuesta = response.json()
+        if isinstance(respuesta, list) and 'generated_text' in respuesta[0]:
+            return respuesta[0]['generated_text']
+        elif isinstance(respuesta, dict) and 'generated_text' in respuesta:
+            return respuesta['generated_text']
+        elif 'error' in respuesta:
+            return f"Error Hugging Face: {respuesta['error']}"
+        else:
+            return "No se pudo procesar la respuesta de Hugging Face."
+    except Exception as e:
+        return f"Error de conexión Hugging Face: {e}"
 
 st.set_page_config(page_title="Gestión y Análisis de Dietas", layout="wide")
 
@@ -49,22 +68,6 @@ def fmt2(x):
 
 def fmt2_df(df):
     return df.applymap(fmt2)
-
-def analizar_escenario_con_ia(prompt, datos_escenario, modelo="gpt-3.5-turbo"):
-    texto = f"{prompt}\n\nDatos del escenario:\n{datos_escenario}"
-    try:
-        response = openai.chat.completions.create(
-            model=modelo,
-            messages=[
-                {"role": "system", "content": "Eres un experto en nutrición animal, análisis comparativo y formulación de dietas. Explica de forma clara y concreta."},
-                {"role": "user", "content": texto}
-            ],
-            max_tokens=600,
-            temperature=0.7
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"Error al conectar con IA: {e}"
 
 with st.sidebar:
     st.image("nombre_archivo_logo.png", width=110)
@@ -181,7 +184,6 @@ def comparador_escenarios(escenarios):
     pesta1, pesta2, pesta3, pesta4 = st.tabs([
         "Precio por Nutriente Sombra", "Composición Dieta", "Composición Ingredientes", "Dieta Completa"
     ])
-    # IA: resumen del escenario actual seleccionado
     resumen_comparador = ""
     with pesta1:
         st.markdown("#### Precio sombra por nutriente (Shadow Price)")
@@ -259,7 +261,6 @@ def comparador_escenarios(escenarios):
                 )
                 resumen_comparador += f"\n\nShadow price {nut}:\n{df_shadow.to_csv(index=False)}"
 
-        # Interacción IA para shadow price
         st.markdown("---")
         st.markdown("### Análisis automático con IA")
         prompt_shadow = st.text_area("Consulta para IA sobre shadow price", value="Genera un análisis experto del precio sombra y su relevancia en estos escenarios.")
@@ -411,7 +412,6 @@ def comparador_escenarios(escenarios):
             "- El precio sombra te permite estimar el costo mínimo teórico de cada nutriente en las fórmulas.\n"
             "- Las pestañas permiten ajustar la unidad y comparar valores en la escala más útil para tu análisis."
         )
-        # IA para resumen del comparador
         prompt_final = st.text_area("Consulta para IA sobre el resumen de escenarios comparados", value="Genera un informe comparativo y recomendaciones finales según los escenarios presentados.")
         resumen_final = f"Resumen comparativo de costos:\n{pd.DataFrame({'Costo total (USD/ton)':costos}).to_csv(index=True)}"
         if st.button("Analizar con IA - Resumen Comparador"):
