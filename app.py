@@ -17,7 +17,13 @@ def analizar_escenario_con_ia(prompt, datos_escenario):
     payload = {"inputs": texto, "parameters": {"max_length": 200}}
     try:
         response = requests.post(HF_MODEL_URL, headers=HF_HEADERS, json=payload, timeout=30)
-        respuesta = response.json()
+        # --- DEBUG: muestra la respuesta cruda para diagnosticar ---
+        if response.status_code != 200:
+            return f"Error Hugging Face (status {response.status_code}): {response.text}"
+        try:
+            respuesta = response.json()
+        except Exception:
+            return f"Respuesta no válida de Hugging Face: {response.text}"
         if isinstance(respuesta, list) and 'generated_text' in respuesta[0]:
             return respuesta[0]['generated_text']
         elif isinstance(respuesta, dict) and 'generated_text' in respuesta:
