@@ -7,10 +7,24 @@ import plotly.graph_objs as go
 import plotly.express as px
 import openai  # pip install openai
 
-# Configura tu API Key (puedes ponerla en secrets.toml, o aquí directamente)
-openai.api_key = st.secrets.get("OPENAI_API_KEY", "") # O: os.getenv("OPENAI_API_KEY")
+# Configura tu API Key como antes
+openai.api_key = "TU_API_KEY"
 
-st.set_page_config(page_title="Gestión y Análisis de Dietas", layout="wide")
+def analizar_escenario_con_ia(prompt, datos_escenario, modelo="gpt-3.5-turbo"):
+    texto = f"{prompt}\n\nDatos del escenario:\n{datos_escenario}"
+    try:
+        response = openai.chat.completions.create(
+            model=modelo,
+            messages=[
+                {"role": "system", "content": "Eres un experto en nutrición animal, análisis comparativo y formulación de dietas. Explica de forma clara y concreta."},
+                {"role": "user", "content": texto}
+            ],
+            max_tokens=600,
+            temperature=0.7
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error al conectar con IA: {e}"
 
 # --- ESTILO CORPORATIVO ---
 st.markdown("""
