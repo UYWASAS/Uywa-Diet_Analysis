@@ -127,10 +127,8 @@ def comparador_escenarios(escenarios):
         for nut in nutrientes_disponibles:
             min_price = np.inf
             best_ing = None
-            # Buscar entre todos los ingredientes de todos los escenarios seleccionados
             for esc in escenarios_sel:
                 for ing in esc["ingredientes"]:
-                    # Buscar el valor de contenido de nutriente y precio para este ingrediente en el escenario
                     idx = esc["ingredientes"].index(ing)
                     row = esc["data_formula"][idx]
                     contenido = pd.to_numeric(row[nut], errors="coerce")
@@ -148,6 +146,7 @@ def comparador_escenarios(escenarios):
             "Ingrediente más barato": [shadow_prices[nut][1] for nut in nutrientes_disponibles],
         })
         st.dataframe(df_shadow.style.format({"Precio sombra (USD/unidad)": "{:.4f}"}), use_container_width=True)
+        # CORREGIDO: customdata debe ser una sola lista (usamos np.stack para unir dos columnas)
         fig_shadow = go.Figure()
         fig_shadow.add_trace(go.Bar(
             x=df_shadow["Nutriente"],
@@ -155,8 +154,8 @@ def comparador_escenarios(escenarios):
             text=[f"{v:.4f}" for v in df_shadow["Precio sombra (USD/unidad)"]],
             marker_color='indigo',
             textposition='auto',
-            hovertemplate='%{x}<br>Shadow price: %{y:.4f} USD/unidad<br>Mejor ingrediente: %{customdata}<extra></extra>',
-            customdata=df_shadow["Ingrediente más barato"],
+            customdata=np.stack([df_shadow.get("Ingrediente más barato", ""), [""]*len(df_shadow)], axis=-1),
+            hovertemplate='%{x}<br>Shadow price: %{y:.4f} USD/unidad<br>Mejor ingrediente: %{customdata[0]}<extra></extra>',
         ))
         fig_shadow.update_layout(
             xaxis_title="Nutriente",
@@ -342,7 +341,6 @@ with tab1:
                 "Precio Sombra por Nutriente (Shadow Price)"
             ])
 
-            # TAB 1: Costo por Ingrediente
             with subtab1:
                 st.markdown("#### Costo total aportado por cada ingrediente (USD/tonelada de dieta, proporcional)")
                 costos = [
@@ -371,7 +369,6 @@ with tab1:
                 st.markdown(f"**Costo total de la fórmula:** ${total_costo_ton:.2f} USD/tonelada")
                 st.markdown("Cada barra muestra el costo y el porcentaje proporcional de cada ingrediente respecto al costo total de la dieta.")
 
-            # TAB 2: Aporte por Ingrediente a Nutrientes
             with subtab2:
                 st.markdown("#### Aporte de cada ingrediente a cada nutriente (barras por nutriente)")
                 nut_tabs = st.tabs([nut for nut in nutrientes_seleccionados])
@@ -404,7 +401,6 @@ with tab1:
                         st.plotly_chart(fig, use_container_width=True)
                         st.markdown(f"**Total de {nut} en la dieta:** {tabla[nut].iloc[-1]:.2f} {unidad}")
 
-            # TAB 3: Shadow Price
             with subtab3:
                 st.markdown("#### Precio sombra por nutriente (Shadow Price)")
                 shadow_prices = {}
@@ -436,9 +432,8 @@ with tab1:
                     text=[f"{v:.4f}" for v in df_shadow["Precio sombra (USD/unidad)"]],
                     marker_color='indigo',
                     textposition='auto',
-                    hovertemplate='%{x}<br>Shadow price: %{y:.4f} USD/%{customdata}<br>Mejor ingrediente: %{customdata2}<extra></extra>',
-                    customdata=df_shadow["Unidad"],
-                    customdata2=df_shadow["Ingrediente más barato"],
+                    customdata=np.stack([df_shadow["Unidad"], df_shadow["Ingrediente más barato"]], axis=-1),
+                    hovertemplate='%{x}<br>Shadow price: %{y:.4f} USD/%{customdata[0]}<br>Mejor ingrediente: %{customdata[1]}<extra></extra>',
                 ))
                 fig_shadow.update_layout(
                     xaxis_title="Nutriente",
