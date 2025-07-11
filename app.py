@@ -7,24 +7,10 @@ import plotly.graph_objs as go
 import plotly.express as px
 import openai  # pip install openai
 
-# Configura tu API Key como antes
-openai.api_key = "TU_API_KEY"
+# Configura tu API Key (puedes ponerla en secrets.toml, o aquí directamente)
+openai.api_key = st.secrets.get("OPENAI_API_KEY", "") # O: os.getenv("OPENAI_API_KEY")
 
-def analizar_escenario_con_ia(prompt, datos_escenario, modelo="gpt-3.5-turbo"):
-    texto = f"{prompt}\n\nDatos del escenario:\n{datos_escenario}"
-    try:
-        response = openai.chat.completions.create(
-            model=modelo,
-            messages=[
-                {"role": "system", "content": "Eres un experto en nutrición animal, análisis comparativo y formulación de dietas. Explica de forma clara y concreta."},
-                {"role": "user", "content": texto}
-            ],
-            max_tokens=600,
-            temperature=0.7
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"Error al conectar con IA: {e}"
+st.set_page_config(page_title="Gestión y Análisis de Dietas", layout="wide")
 
 # --- ESTILO CORPORATIVO ---
 st.markdown("""
@@ -65,11 +51,11 @@ def fmt2(x):
 def fmt2_df(df):
     return df.applymap(fmt2)
 
-# --- Función para analizar con IA ---
+# --- Función para analizar con IA (actualizada para openai>=1.0.0) ---
 def analizar_escenario_con_ia(prompt, datos_escenario, modelo="gpt-3.5-turbo"):
     texto = f"{prompt}\n\nDatos del escenario:\n{datos_escenario}"
     try:
-        respuesta = openai.ChatCompletion.create(
+        response = openai.chat.completions.create(
             model=modelo,
             messages=[
                 {"role": "system", "content": "Eres un experto en nutrición animal, análisis comparativo y formulación de dietas. Explica de forma clara y concreta."},
@@ -78,10 +64,9 @@ def analizar_escenario_con_ia(prompt, datos_escenario, modelo="gpt-3.5-turbo"):
             max_tokens=600,
             temperature=0.7
         )
-        return respuesta.choices[0].message.content
+        return response.choices[0].message.content
     except Exception as e:
         return f"Error al conectar con IA: {e}"
-
 with st.sidebar:
     st.image("nombre_archivo_logo.png", width=110)
     st.markdown(
