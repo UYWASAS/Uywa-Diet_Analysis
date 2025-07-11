@@ -100,8 +100,8 @@ def get_inclusion(esc, ing):
             return incl_list[idx]
     return 0
 
-def unit_selector(label, options, default):
-    return st.selectbox(label, options, index=options.index(default) if default in options else 0)
+def unit_selector(label, options, default, key):
+    return st.selectbox(label, options, index=options.index(default) if default in options else 0, key=key)
 
 def format_price(value, factor):
     return value * factor if pd.notnull(value) else np.nan
@@ -117,8 +117,6 @@ def format_label(unit, factor):
         return f"USD/{factor}{unit}"
 
 def get_unit_factor(unit, manual_unit):
-    # Translates a unit and manual_unit to a factor and label
-    # manual_unit = string, one of: 'unidad', '100 unidades', 'kg', 'ton', '100g', '1000kcal', etc.
     if manual_unit.lower() in ['unidad', unit]:
         return 1, format_label(unit, 1)
     elif manual_unit.lower().startswith('100'):
@@ -132,33 +130,6 @@ def get_unit_factor(unit, manual_unit):
     elif manual_unit.lower() == '1000kcal':
         return 1000, "USD/1000kcal"
     return 1, f"USD/{unit}"
-
-def shadow_price_table(df_formula, nutrientes_seleccionados, unidades_dict, unit_options):
-    # Devuelve un dict de dataframes por nutriente
-    result = {}
-    for nut in nutrientes_seleccionados:
-        unit = unidades_dict.get(nut, "unidad")
-        manual_unit = unit_selector(f"Unidad para {nut}", unit_options.get(unit, ["unidad", "100 unidades", "1000 unidades", "kg", "ton"]), unit_options.get(unit, ["unidad"])[0])
-        factor, label = get_unit_factor(unit, manual_unit)
-        precios = []
-        for idx, row in df_formula.iterrows():
-            contenido = pd.to_numeric(row[nut], errors="coerce")
-            precio = row["precio"]
-            if pd.notnull(contenido) and contenido > 0 and pd.notnull(precio):
-                precio_unitario = precio / contenido * factor
-            else:
-                precio_unitario = np.nan
-            precios.append(precio_unitario)
-        df = pd.DataFrame({
-            "Ingrediente": df_formula["Ingrediente"],
-            f"Precio por {manual_unit}": precios,
-            f"Contenido de {nut} por kg": [row[nut] for idx, row in df_formula.iterrows()],
-            "Precio ingrediente (USD/kg)": [row["precio"] for idx, row in df_formula.iterrows()],
-        })
-        min_idx = df[f"Precio por {manual_unit}"].idxmin()
-        df["Es el más barato"] = ["✅" if i == min_idx else "" for i in df.index]
-        result[nut] = (df, label, min_idx)
-    return result
 
 def comparador_escenarios(escenarios):
     st.header("Comparador de Escenarios Guardados")
@@ -179,7 +150,6 @@ def comparador_escenarios(escenarios):
         "Precio por Nutriente Sombra", "Composición Dieta", "Composición Ingredientes", "Dieta Completa"
     ])
 
-    # ---- TAB 1 Shadow price con pestañas y selector de unidad ----
     with pesta1:
         st.markdown("#### Precio sombra por nutriente (Shadow Price)")
         nutrientes_disponibles = sorted(list({nut for esc in escenarios_sel for nut in esc["nutrientes"]}))
@@ -193,12 +163,11 @@ def comparador_escenarios(escenarios):
             'g': ['g', '100g', 'kg', 'ton'],
             'kcal': ['kcal', '1000kcal'],
             '%': ['%', '100 unidades'],
-            'unidad': ['unidad', '100 unidades', '1000 unidades'],
+            'unidad': ['unidad', '100 unidades', '1000 unidades', 'kg', 'ton'],
         }
         shadow_tab = st.tabs(nutrientes_disponibles)
         for idx, nut in enumerate(nutrientes_disponibles):
             with shadow_tab[idx]:
-                # Agrupa todos los ingredientes de todos los escenarios
                 ingredientes = []
                 precios = []
                 contenidos = []
@@ -215,7 +184,12 @@ def comparador_escenarios(escenarios):
                             precios_ing.append(precio)
                             esc_names.append(esc["nombre"])
                 unit = unidades_dict.get(nut, "unidad")
-                manual_unit = unit_selector(f"Unidad para {nut}", unit_options.get(unit, ["unidad", "100 unidades", "1000 unidades", "kg", "ton"]), unit_options.get(unit, ["unidad"])[0])
+                manual_unit = unit_selector(
+                    f"Unidad para {nut}",
+                    unit_options.get(unit, ["unidad", "100 unidades", "1000 unidades", "kg", "ton"]),
+                    unit_options.get(unit, ["unidad"])[0],
+                    key=f"unit_selector_{nut}_shadow"
+                )
                 factor, label = get_unit_factor(unit, manual_unit)
                 precios_unit = [precio / contenido * factor if contenido > 0 else np.nan for precio, contenido in zip(precios_ing, contenidos)]
                 df_shadow = pd.DataFrame({
@@ -251,7 +225,6 @@ def comparador_escenarios(escenarios):
                     f"- El ingrediente marcado con ✅ aporta el precio sombra."
                 )
 
-    # ---- TAB 2: Composición Dieta con selector de unidad ----
     with pesta2:
         nutrientes_disponibles = sorted(list({
             nut for esc in escenarios_sel
@@ -280,7 +253,12 @@ def comparador_escenarios(escenarios):
         for i, nut in enumerate(nut_select_2):
             with nut_tabs[i]:
                 unit = unidades_dict.get(nut, "unidad")
-                manual_unit = unit_selector(f"Unidad para {nut}", unit_options.get(unit, ["unidad", "100 unidades", "1000 unidades", "kg", "ton"]), unit_options.get(unit, ["unidad"])[0])
+                manual_unit = unit_selector(
+                    f"Unidad para {nut}",
+                    unit_options.get(unit, ["unidad", "100 unidades", "1000 unidades", "kg", "ton"]),
+                    unit_options.get(unit, ["unidad"])[0],
+                    key=f"unit_selector_{nut}_comp"
+                )
                 factor, label = get_unit_factor(unit, manual_unit)
                 valores = []
                 esc_names = []
@@ -301,7 +279,7 @@ def comparador_escenarios(escenarios):
                     marker_color='dodgerblue',
                     text=[f"{v:.2f}" for v in valores],
                     textposition='auto',
-                    hovertemplate='%{x}<br>{nut}: %{y:.2f} {manual_unit}<extra></extra>',
+                    hovertemplate=f'%{{x}}<br>{nut}: %{{y:.2f}} {manual_unit}<extra></extra>',
                 ))
                 fig.update_layout(
                     xaxis_title="Escenario",
@@ -313,7 +291,6 @@ def comparador_escenarios(escenarios):
                     f"Puedes ajustar la unidad para comparar valores en la escala más adecuada para cada nutriente."
                 )
 
-    # ---- TAB 3: Composición Ingredientes con selector de unidad ----
     with pesta3:
         ingredientes_disponibles = sorted(list({ing for esc in escenarios_sel for ing in esc.get("ingredientes", [])}))
         ing_select = st.multiselect(
@@ -326,7 +303,12 @@ def comparador_escenarios(escenarios):
             '%': ['%', '100 unidades'],
             'unidad': ['unidad', '100 unidades', '1000 unidades'],
         }
-        manual_unit = unit_selector("Unidad para inclusión", unit_options.get('%', ['%']), '%')
+        manual_unit = unit_selector(
+            "Unidad para inclusión",
+            unit_options.get('%', ['%']),
+            '%',
+            key="unit_selector_inclusion_comp"
+        )
         factor, label = get_unit_factor('%', manual_unit)
         if ing_select:
             esc_names = []
@@ -346,7 +328,7 @@ def comparador_escenarios(escenarios):
                     name=esc["nombre"],
                     text=[f"{v:.2f}" for v in valores[esc["nombre"]]],
                     textposition='auto',
-                    hovertemplate='%{x}<br>Inclusión: %{y:.2f} {manual_unit}<extra></extra>',
+                    hovertemplate=f'%{{x}}<br>Inclusión: %{{y:.2f}} {manual_unit}<extra></extra>',
                 ))
             fig.update_layout(
                 barmode='group',
@@ -357,7 +339,6 @@ def comparador_escenarios(escenarios):
             st.plotly_chart(fig, use_container_width=True)
             st.markdown("Puedes ajustar la unidad para mostrar la inclusión de ingredientes en la escala más adecuada.")
 
-    # ---- TAB 4: COSTO TOTAL ----
     with pesta4:
         st.markdown("#### Costo total de cada escenario (USD/tonelada)")
         costos = {esc["nombre"]: esc["costo_total"] for esc in escenarios_sel}
@@ -485,9 +466,13 @@ with tab1:
                 "Precio Sombra por Nutriente (Shadow Price)"
             ])
 
-            # ---- TAB 1 Costo Total con selector de unidad ----
             with subtab1:
-                manual_unit = unit_selector("Unidad para mostrar el costo total por ingrediente", ['USD/kg', 'USD/ton'], 'USD/ton')
+                manual_unit = unit_selector(
+                    "Unidad para mostrar el costo total por ingrediente",
+                    ['USD/kg', 'USD/ton'],
+                    'USD/ton',
+                    key="unit_selector_costototal_tab1"
+                )
                 factor = 1 if manual_unit == 'USD/kg' else 1000
                 label = manual_unit
                 costos = [
@@ -501,7 +486,7 @@ with tab1:
                     marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
                     text=[f"{c:.2f} {label}" for c in costos],
                     textposition='auto',
-                    hovertemplate='%{x}<br>Costo: %{y:.2f} {label}<extra></extra>'
+                    hovertemplate=f'%{{x}}<br>Costo: %{{y:.2f}} {label}<extra></extra>'
                 )])
                 fig2.update_layout(
                     xaxis_title="Ingrediente",
@@ -519,7 +504,6 @@ with tab1:
                 st.dataframe(df_costos.style.format({f"Costo aportado ({label})": "{:.2f}"}), use_container_width=True)
                 st.markdown(f"**Costo total de la fórmula:** {total_costo:.2f} {label} (suma de los ingredientes). Puedes cambiar la unidad.")
 
-            # ---- TAB 2 Aporte por ingrediente a nutrientes con selector de unidad ----
             with subtab2:
                 unit_options = {
                     'kg': ['kg', 'ton'],
@@ -532,7 +516,12 @@ with tab1:
                 for i, nut in enumerate(nutrientes_seleccionados):
                     with nut_tabs[i]:
                         unit = unidades_dict.get(nut, "unidad")
-                        manual_unit = unit_selector(f"Unidad para {nut}", unit_options.get(unit, ["unidad", "100 unidades", "1000 unidades", "kg", "ton"]), unit_options.get(unit, ["unidad"])[0])
+                        manual_unit = unit_selector(
+                            f"Unidad para {nut}",
+                            unit_options.get(unit, ["unidad", "100 unidades", "1000 unidades", "kg", "ton"]),
+                            unit_options.get(unit, ["unidad"])[0],
+                            key=f"unit_selector_{nut}_aporte_tab1"
+                        )
                         factor, label = get_unit_factor(unit, manual_unit)
                         valores = []
                         for ing in ingredientes_seleccionados:
@@ -554,7 +543,7 @@ with tab1:
                             marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
                             text=[f"{v:.2f}" for v in valores],
                             textposition='auto',
-                            hovertemplate='%{x}<br>Aporte: %{y:.2f} {label}<extra></extra>',
+                            hovertemplate=f'%{{x}}<br>Aporte: %{{y:.2f}} {label}<extra></extra>',
                         ))
                         fig.update_layout(
                             xaxis_title="Ingrediente",
@@ -566,7 +555,6 @@ with tab1:
                             f"Puedes ajustar la unidad para visualizar el aporte en la escala más útil para tu análisis."
                         )
 
-            # ---- TAB 3 Shadow price con selector de unidad y todos los ingredientes ----
             with subtab3:
                 unit_options = {
                     'kg': ['kg', 'ton'],
@@ -579,7 +567,12 @@ with tab1:
                 for idx, nut in enumerate(nutrientes_seleccionados):
                     with shadow_tab[idx]:
                         unit = unidades_dict.get(nut, "unidad")
-                        manual_unit = unit_selector(f"Unidad para {nut}", unit_options.get(unit, ["unidad", "100 unidades", "1000 unidades", "kg", "ton"]), unit_options.get(unit, ["unidad"])[0])
+                        manual_unit = unit_selector(
+                            f"Unidad para {nut}",
+                            unit_options.get(unit, ["unidad", "100 unidades", "1000 unidades", "kg", "ton"]),
+                            unit_options.get(unit, ["unidad"])[0],
+                            key=f"unit_selector_{nut}_shadow_tab1"
+                        )
                         factor, label = get_unit_factor(unit, manual_unit)
                         precios_unit = []
                         contenidos = []
@@ -612,7 +605,7 @@ with tab1:
                             text=[f"{v:.4f}" for v in df_shadow[f"Precio por {manual_unit}"]],
                             textposition='auto',
                             customdata=np.stack([df_shadow["Es el más barato"]], axis=-1),
-                            hovertemplate='%{x}<br>Precio sombra: %{y:.4f} {label}<br>%{customdata[0]}<extra></extra>',
+                            hovertemplate=f'%{{x}}<br>Precio sombra: %{{y:.4f}} {label}<br>%{{customdata[0]}}<extra></extra>',
                         ))
                         fig_shadow.update_layout(
                             xaxis_title="Ingrediente",
@@ -626,7 +619,6 @@ with tab1:
                             f"- El ingrediente marcado con ✅ aporta el precio sombra."
                         )
 
-            # --- GUARDAR ESCENARIO ---
             st.markdown("---")
             escenarios = cargar_escenarios()
             nombre_escenario = st.text_input("Nombre para guardar este escenario", value="Escenario " + str(len(escenarios)+1), key="nombre_escenario")
