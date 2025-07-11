@@ -100,6 +100,66 @@ def get_inclusion(esc, ing):
             return incl_list[idx]
     return 0
 
+def unit_selector(label, options, default):
+    return st.selectbox(label, options, index=options.index(default) if default in options else 0)
+
+def format_price(value, factor):
+    return value * factor if pd.notnull(value) else np.nan
+
+def format_label(unit, factor):
+    if factor == 1:
+        return f"USD/{unit}"
+    elif factor == 100:
+        return f"USD/100{unit}"
+    elif factor == 1000:
+        return f"USD/1000{unit}" if unit != 'kg' else "USD/ton"
+    else:
+        return f"USD/{factor}{unit}"
+
+def get_unit_factor(unit, manual_unit):
+    # Translates a unit and manual_unit to a factor and label
+    # manual_unit = string, one of: 'unidad', '100 unidades', 'kg', 'ton', '100g', '1000kcal', etc.
+    if manual_unit.lower() in ['unidad', unit]:
+        return 1, format_label(unit, 1)
+    elif manual_unit.lower().startswith('100'):
+        return 100, format_label(unit, 100)
+    elif manual_unit.lower().startswith('1000') or manual_unit.lower() == 'ton':
+        return 1000, format_label(unit, 1000)
+    elif manual_unit.lower() == 'kg':
+        return 1, f"USD/kg"
+    elif manual_unit.lower() == '100g':
+        return 100, "USD/100g"
+    elif manual_unit.lower() == '1000kcal':
+        return 1000, "USD/1000kcal"
+    return 1, f"USD/{unit}"
+
+def shadow_price_table(df_formula, nutrientes_seleccionados, unidades_dict, unit_options):
+    # Devuelve un dict de dataframes por nutriente
+    result = {}
+    for nut in nutrientes_seleccionados:
+        unit = unidades_dict.get(nut, "unidad")
+        manual_unit = unit_selector(f"Unidad para {nut}", unit_options.get(unit, ["unidad", "100 unidades", "1000 unidades", "kg", "ton"]), unit_options.get(unit, ["unidad"])[0])
+        factor, label = get_unit_factor(unit, manual_unit)
+        precios = []
+        for idx, row in df_formula.iterrows():
+            contenido = pd.to_numeric(row[nut], errors="coerce")
+            precio = row["precio"]
+            if pd.notnull(contenido) and contenido > 0 and pd.notnull(precio):
+                precio_unitario = precio / contenido * factor
+            else:
+                precio_unitario = np.nan
+            precios.append(precio_unitario)
+        df = pd.DataFrame({
+            "Ingrediente": df_formula["Ingrediente"],
+            f"Precio por {manual_unit}": precios,
+            f"Contenido de {nut} por kg": [row[nut] for idx, row in df_formula.iterrows()],
+            "Precio ingrediente (USD/kg)": [row["precio"] for idx, row in df_formula.iterrows()],
+        })
+        min_idx = df[f"Precio por {manual_unit}"].idxmin()
+        df["Es el más barato"] = ["✅" if i == min_idx else "" for i in df.index]
+        result[nut] = (df, label, min_idx)
+    return result
+
 def comparador_escenarios(escenarios):
     st.header("Comparador de Escenarios Guardados")
     if len(escenarios) < 2:
@@ -119,55 +179,79 @@ def comparador_escenarios(escenarios):
         "Precio por Nutriente Sombra", "Composición Dieta", "Composición Ingredientes", "Dieta Completa"
     ])
 
-    # TAB 1: SHADOW PRICE
+    # ---- TAB 1 Shadow price con pestañas y selector de unidad ----
     with pesta1:
         st.markdown("#### Precio sombra por nutriente (Shadow Price)")
         nutrientes_disponibles = sorted(list({nut for esc in escenarios_sel for nut in esc["nutrientes"]}))
-        shadow_prices = {}
-        for nut in nutrientes_disponibles:
-            min_price = np.inf
-            best_ing = None
-            for esc in escenarios_sel:
-                for ing in esc["ingredientes"]:
-                    idx = esc["ingredientes"].index(ing)
-                    row = esc["data_formula"][idx]
-                    contenido = pd.to_numeric(row[nut], errors="coerce")
-                    precio = row["precio"]
-                    if pd.notnull(contenido) and contenido > 0 and pd.notnull(precio):
-                        price_per_unit = precio / contenido
-                        if price_per_unit < min_price:
-                            min_price = price_per_unit
-                            best_ing = f'{ing} ({esc["nombre"]})'
-            shadow_prices[nut] = (min_price if min_price!=np.inf else np.nan, best_ing)
-        unidad = [escenarios_sel[0]["nutrientes"].count(nut) and escenarios_sel[0]["nutrientes"] and escenarios_sel[0]["nutrientes"][0] for nut in nutrientes_disponibles] if escenarios_sel else []
-        df_shadow = pd.DataFrame({
-            "Nutriente": nutrientes_disponibles,
-            "Precio sombra (USD/unidad)": [shadow_prices[nut][0] for nut in nutrientes_disponibles],
-            "Ingrediente más barato": [shadow_prices[nut][1] for nut in nutrientes_disponibles],
-        })
-        st.dataframe(df_shadow.style.format({"Precio sombra (USD/unidad)": "{:.4f}"}), use_container_width=True)
-        # CORREGIDO: customdata debe ser una sola lista (usamos np.stack para unir dos columnas)
-        fig_shadow = go.Figure()
-        fig_shadow.add_trace(go.Bar(
-            x=df_shadow["Nutriente"],
-            y=df_shadow["Precio sombra (USD/unidad)"],
-            text=[f"{v:.4f}" for v in df_shadow["Precio sombra (USD/unidad)"]],
-            marker_color='indigo',
-            textposition='auto',
-            customdata=np.stack([df_shadow.get("Ingrediente más barato", ""), [""]*len(df_shadow)], axis=-1),
-            hovertemplate='%{x}<br>Shadow price: %{y:.4f} USD/unidad<br>Mejor ingrediente: %{customdata[0]}<extra></extra>',
-        ))
-        fig_shadow.update_layout(
-            xaxis_title="Nutriente",
-            yaxis_title="Precio sombra (USD/unidad)",
-            title="Precio sombra por nutriente (Shadow price)",
-        )
-        st.plotly_chart(fig_shadow, use_container_width=True)
-        st.markdown(
-            "El precio sombra por nutriente estima el costo mínimo teórico para obtener una unidad de cada nutriente en la dieta, usando el ingrediente más barato en cada caso."
-        )
+        unidades_dict = {}
+        for esc in escenarios_sel:
+            for nut in esc["nutrientes"]:
+                if nut not in unidades_dict:
+                    unidades_dict[nut] = esc.get("unidades_dict", {}).get(nut, "unidad")
+        unit_options = {
+            'kg': ['kg', 'ton'],
+            'g': ['g', '100g', 'kg', 'ton'],
+            'kcal': ['kcal', '1000kcal'],
+            '%': ['%', '100 unidades'],
+            'unidad': ['unidad', '100 unidades', '1000 unidades'],
+        }
+        shadow_tab = st.tabs(nutrientes_disponibles)
+        for idx, nut in enumerate(nutrientes_disponibles):
+            with shadow_tab[idx]:
+                # Agrupa todos los ingredientes de todos los escenarios
+                ingredientes = []
+                precios = []
+                contenidos = []
+                precios_ing = []
+                esc_names = []
+                for esc in escenarios_sel:
+                    for i, ing in enumerate(esc["ingredientes"]):
+                        row = esc["data_formula"][i]
+                        contenido = pd.to_numeric(row.get(nut, 0), errors="coerce")
+                        precio = row.get("precio", np.nan)
+                        if pd.notnull(contenido) and contenido > 0 and pd.notnull(precio):
+                            ingredientes.append(f"{ing} ({esc['nombre']})")
+                            contenidos.append(contenido)
+                            precios_ing.append(precio)
+                            esc_names.append(esc["nombre"])
+                unit = unidades_dict.get(nut, "unidad")
+                manual_unit = unit_selector(f"Unidad para {nut}", unit_options.get(unit, ["unidad", "100 unidades", "1000 unidades", "kg", "ton"]), unit_options.get(unit, ["unidad"])[0])
+                factor, label = get_unit_factor(unit, manual_unit)
+                precios_unit = [precio / contenido * factor if contenido > 0 else np.nan for precio, contenido in zip(precios_ing, contenidos)]
+                df_shadow = pd.DataFrame({
+                    "Ingrediente": ingredientes,
+                    f"Precio por {manual_unit}": precios_unit,
+                    f"Contenido de {nut} por kg": contenidos,
+                    "Precio ingrediente (USD/kg)": precios_ing,
+                    "Escenario": esc_names,
+                })
+                min_idx = df_shadow[f"Precio por {manual_unit}"].idxmin()
+                df_shadow["Es el más barato"] = ["✅" if i == min_idx else "" for i in df_shadow.index]
+                st.dataframe(df_shadow.style.format({f"Precio por {manual_unit}": "{:.4f}"}), use_container_width=True)
+                bar_colors = ['green' if i == min_idx else 'royalblue' for i in range(len(df_shadow))]
+                fig_shadow = go.Figure()
+                fig_shadow.add_trace(go.Bar(
+                    x=df_shadow["Ingrediente"],
+                    y=df_shadow[f"Precio por {manual_unit}"],
+                    marker_color=bar_colors,
+                    text=[f"{v:.4f}" for v in df_shadow[f"Precio por {manual_unit}"]],
+                    textposition='auto',
+                    customdata=np.stack([df_shadow["Escenario"], df_shadow["Es el más barato"]], axis=-1),
+                    hovertemplate='%{x}<br>Escenario: %{customdata[0]}<br>Precio sombra: %{y:.4f} {label}<br>%{customdata[1]}<extra></extra>',
+                ))
+                fig_shadow.update_layout(
+                    xaxis_title="Ingrediente",
+                    yaxis_title=label,
+                    title=f"Precio sombra y costo por ingrediente para {nut}",
+                )
+                st.plotly_chart(fig_shadow, use_container_width=True)
+                st.markdown(
+                    f"**El precio sombra de {nut} es el menor costo posible para obtener una unidad de este nutriente usando el ingrediente más barato en cada fórmula.**\n\n"
+                    f"- Puedes ajustar la unidad para mejorar la visualización.\n"
+                    f"- El ingrediente marcado con ✅ aporta el precio sombra."
+                )
 
-    # TAB 2: COMPOSICIÓN DIETA
+    # ---- TAB 2: Composición Dieta con selector de unidad ----
     with pesta2:
         nutrientes_disponibles = sorted(list({
             nut for esc in escenarios_sel
@@ -180,19 +264,56 @@ def comparador_escenarios(escenarios):
             default=nutrientes_disponibles,
             key="nutrientes_comparador_comp_tab"
         )
-        if nut_select_2:
-            df_nut = pd.DataFrame({
-                esc["nombre"]: [get_val(esc, nut) for nut in nut_select_2] for esc in escenarios_sel
-            }, index=nut_select_2)
-            st.dataframe(df_nut.style.format("{:.2f}"), use_container_width=True)
-            fig = go.Figure()
-            for esc in escenarios_sel:
-                y_vals = [get_val(esc, nut) for nut in nut_select_2]
-                fig.add_trace(go.Bar(x=nut_select_2, y=y_vals, name=esc["nombre"]))
-            fig.update_layout(barmode='group', xaxis_title="Nutriente", yaxis_title="Valor en dieta")
-            st.plotly_chart(fig, use_container_width=True)
+        unidades_dict = {}
+        for esc in escenarios_sel:
+            for nut in esc.get("tabla", {}).keys():
+                if nut not in unidades_dict:
+                    unidades_dict[nut] = esc.get("unidades_dict", {}).get(nut, "unidad")
+        unit_options = {
+            'kg': ['kg', 'ton'],
+            'g': ['g', '100g', 'kg', 'ton'],
+            'kcal': ['kcal', '1000kcal'],
+            '%': ['%', '100 unidades'],
+            'unidad': ['unidad', '100 unidades', '1000 unidades', 'kg', 'ton'],
+        }
+        nut_tabs = st.tabs(nut_select_2)
+        for i, nut in enumerate(nut_select_2):
+            with nut_tabs[i]:
+                unit = unidades_dict.get(nut, "unidad")
+                manual_unit = unit_selector(f"Unidad para {nut}", unit_options.get(unit, ["unidad", "100 unidades", "1000 unidades", "kg", "ton"]), unit_options.get(unit, ["unidad"])[0])
+                factor, label = get_unit_factor(unit, manual_unit)
+                valores = []
+                esc_names = []
+                for esc in escenarios_sel:
+                    val = get_val(esc, nut)
+                    val = val * factor if pd.notnull(val) else np.nan
+                    valores.append(val)
+                    esc_names.append(esc["nombre"])
+                df_nut = pd.DataFrame({
+                    "Escenario": esc_names,
+                    f"{nut} ({manual_unit})": valores,
+                })
+                st.dataframe(df_nut.style.format({f"{nut} ({manual_unit})": "{:.2f}"}), use_container_width=True)
+                fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    x=esc_names,
+                    y=valores,
+                    marker_color='dodgerblue',
+                    text=[f"{v:.2f}" for v in valores],
+                    textposition='auto',
+                    hovertemplate='%{x}<br>{nut}: %{y:.2f} {manual_unit}<extra></extra>',
+                ))
+                fig.update_layout(
+                    xaxis_title="Escenario",
+                    yaxis_title=f"{nut} ({manual_unit})",
+                    title=f"Comparación de {nut} en cada escenario",
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                st.markdown(
+                    f"Puedes ajustar la unidad para comparar valores en la escala más adecuada para cada nutriente."
+                )
 
-    # TAB 3: COMPOSICIÓN INGREDIENTES
+    # ---- TAB 3: Composición Ingredientes con selector de unidad ----
     with pesta3:
         ingredientes_disponibles = sorted(list({ing for esc in escenarios_sel for ing in esc.get("ingredientes", [])}))
         ing_select = st.multiselect(
@@ -201,19 +322,42 @@ def comparador_escenarios(escenarios):
             default=ingredientes_disponibles,
             key="ingredientes_comparador_tab"
         )
+        unit_options = {
+            '%': ['%', '100 unidades'],
+            'unidad': ['unidad', '100 unidades', '1000 unidades'],
+        }
+        manual_unit = unit_selector("Unidad para inclusión", unit_options.get('%', ['%']), '%')
+        factor, label = get_unit_factor('%', manual_unit)
         if ing_select:
-            df_ing = pd.DataFrame({
-                esc["nombre"]: [get_inclusion(esc, ing) for ing in ing_select] for esc in escenarios_sel
-            }, index=ing_select)
+            esc_names = []
+            valores = {esc["nombre"]: [] for esc in escenarios_sel}
+            for esc in escenarios_sel:
+                for ing in ing_select:
+                    val = get_inclusion(esc, ing)
+                    val = val * factor
+                    valores[esc["nombre"]].append(val)
+            df_ing = pd.DataFrame(valores, index=ing_select)
             st.dataframe(df_ing.style.format("{:.2f}"), use_container_width=True)
             fig = go.Figure()
             for esc in escenarios_sel:
-                y_vals = [get_inclusion(esc, ing) for ing in ing_select]
-                fig.add_trace(go.Bar(x=ing_select, y=y_vals, name=esc["nombre"]))
-            fig.update_layout(barmode='group', xaxis_title="Ingrediente", yaxis_title="% Inclusión")
+                fig.add_trace(go.Bar(
+                    x=ing_select,
+                    y=valores[esc["nombre"]],
+                    name=esc["nombre"],
+                    text=[f"{v:.2f}" for v in valores[esc["nombre"]]],
+                    textposition='auto',
+                    hovertemplate='%{x}<br>Inclusión: %{y:.2f} {manual_unit}<extra></extra>',
+                ))
+            fig.update_layout(
+                barmode='group',
+                xaxis_title="Ingrediente",
+                yaxis_title=f"% Inclusión ({manual_unit})",
+                title="Comparación de inclusión de ingredientes entre escenarios"
+            )
             st.plotly_chart(fig, use_container_width=True)
+            st.markdown("Puedes ajustar la unidad para mostrar la inclusión de ingredientes en la escala más adecuada.")
 
-    # TAB 4: COSTO TOTAL
+    # ---- TAB 4: COSTO TOTAL ----
     with pesta4:
         st.markdown("#### Costo total de cada escenario (USD/tonelada)")
         costos = {esc["nombre"]: esc["costo_total"] for esc in escenarios_sel}
@@ -224,7 +368,7 @@ def comparador_escenarios(escenarios):
         st.markdown(
             "- Puedes comparar la eficiencia económica y nutricional de cada escenario de forma clara y rápida.\n"
             "- El precio sombra te permite estimar el costo mínimo teórico de cada nutriente en las fórmulas.\n"
-            "- La pestaña de composición te permite analizar cómo varían los niveles de nutrientes y la inclusión de ingredientes entre escenarios."
+            "- Las pestañas permiten ajustar la unidad y comparar valores en la escala más útil para tu análisis."
         )
 
 # ============ ANÁLISIS DE DIETA Y ESCENARIOS =============
@@ -341,109 +485,146 @@ with tab1:
                 "Precio Sombra por Nutriente (Shadow Price)"
             ])
 
+            # ---- TAB 1 Costo Total con selector de unidad ----
             with subtab1:
-                st.markdown("#### Costo total aportado por cada ingrediente (USD/tonelada de dieta, proporcional)")
+                manual_unit = unit_selector("Unidad para mostrar el costo total por ingrediente", ['USD/kg', 'USD/ton'], 'USD/ton')
+                factor = 1 if manual_unit == 'USD/kg' else 1000
+                label = manual_unit
                 costos = [
-                    round((row["precio"] * row["% Inclusión"] / 100), 2) if pd.notnull(row["precio"]) else 0
+                    round((row["precio"] * row["% Inclusión"] / 100) * factor, 2) if pd.notnull(row["precio"]) else 0
                     for idx, row in df_formula.iterrows()
                 ]
-                costos_ton = [round(c * 1000, 2) for c in costos]
-                total_costo_ton = round(sum(costos_ton), 2)
-                proporciones = [round((c / total_costo_ton * 100), 2) if total_costo_ton > 0 else 0 for c in costos_ton]
+                total_costo = round(sum(costos), 2)
                 fig2 = go.Figure([go.Bar(
                     x=ingredientes_seleccionados,
-                    y=costos_ton,
+                    y=costos,
                     marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
-                    text=[f"{c:.2f} USD/ton" for c in costos_ton],
+                    text=[f"{c:.2f} {label}" for c in costos],
                     textposition='auto',
-                    customdata=proporciones,
-                    hovertemplate='%{x}<br>Costo: %{y:.2f} USD/ton<br>Proporción: %{customdata:.2f}%<extra></extra>'
+                    hovertemplate='%{x}<br>Costo: %{y:.2f} {label}<extra></extra>'
                 )])
                 fig2.update_layout(
                     xaxis_title="Ingrediente",
-                    yaxis_title="Costo aportado (USD/tonelada de dieta)",
-                    title="Costo total aportado por ingrediente (USD/tonelada)",
+                    yaxis_title=f"Costo aportado ({label})",
+                    title=f"Costo total aportado por ingrediente ({label})",
                     showlegend=False
                 )
                 st.plotly_chart(fig2, use_container_width=True)
-                st.markdown(f"**Costo total de la fórmula:** ${total_costo_ton:.2f} USD/tonelada")
-                st.markdown("Cada barra muestra el costo y el porcentaje proporcional de cada ingrediente respecto al costo total de la dieta.")
+                df_costos = pd.DataFrame({
+                    "Ingrediente": ingredientes_seleccionados,
+                    f"Costo aportado ({label})": costos,
+                    "% Inclusión": [row["% Inclusión"] for idx, row in df_formula.iterrows()],
+                    "Precio ingrediente (USD/kg)": [row["precio"] for idx, row in df_formula.iterrows()],
+                })
+                st.dataframe(df_costos.style.format({f"Costo aportado ({label})": "{:.2f}"}), use_container_width=True)
+                st.markdown(f"**Costo total de la fórmula:** {total_costo:.2f} {label} (suma de los ingredientes). Puedes cambiar la unidad.")
 
+            # ---- TAB 2 Aporte por ingrediente a nutrientes con selector de unidad ----
             with subtab2:
-                st.markdown("#### Aporte de cada ingrediente a cada nutriente (barras por nutriente)")
+                unit_options = {
+                    'kg': ['kg', 'ton'],
+                    'g': ['g', '100g', 'kg', 'ton'],
+                    'kcal': ['kcal', '1000kcal'],
+                    '%': ['%', '100 unidades'],
+                    'unidad': ['unidad', '100 unidades', '1000 unidades', 'kg', 'ton'],
+                }
                 nut_tabs = st.tabs([nut for nut in nutrientes_seleccionados])
                 for i, nut in enumerate(nutrientes_seleccionados):
                     with nut_tabs[i]:
+                        unit = unidades_dict.get(nut, "unidad")
+                        manual_unit = unit_selector(f"Unidad para {nut}", unit_options.get(unit, ["unidad", "100 unidades", "1000 unidades", "kg", "ton"]), unit_options.get(unit, ["unidad"])[0])
+                        factor, label = get_unit_factor(unit, manual_unit)
                         valores = []
                         for ing in ingredientes_seleccionados:
                             valor = pd.to_numeric(df_formula.loc[df_formula["Ingrediente"] == ing, nut], errors="coerce").values[0]
                             porc = df_formula[df_formula["Ingrediente"] == ing]["% Inclusión"].values[0]
-                            aporte = round((valor * porc) / 100, 2) if pd.notnull(valor) else 0
+                            aporte = round((valor * porc) / 100 * factor, 2) if pd.notnull(valor) else 0
                             valores.append(aporte)
-                        unidad = unidades_dict.get(nut, "")
-                        total_nut = tabla[nut].iloc[-1] if tabla[nut].iloc[-1] != 0 else 1
-                        proporciones = [round(v / total_nut * 100, 2) for v in valores]
+                        df_aporte = pd.DataFrame({
+                            "Ingrediente": ingredientes_seleccionados,
+                            f"Aporte de {nut} ({label})": valores,
+                            "% Inclusión": [df_formula[df_formula["Ingrediente"] == ing]["% Inclusión"].values[0] for ing in ingredientes_seleccionados],
+                            "Contenido por kg": [df_formula[df_formula["Ingrediente"] == ing][nut].values[0] for ing in ingredientes_seleccionados],
+                        })
+                        st.dataframe(df_aporte.style.format({f"Aporte de {nut} ({label})": "{:.2f}"}), use_container_width=True)
                         fig = go.Figure()
                         fig.add_trace(go.Bar(
                             x=ingredientes_seleccionados,
                             y=valores,
                             marker_color=[color_map[ing] for ing in ingredientes_seleccionados],
-                            text=[f"{v:.2f} {unidad}" for v in valores],
+                            text=[f"{v:.2f}" for v in valores],
                             textposition='auto',
-                            customdata=proporciones,
-                            hovertemplate='%{x}<br>Aporte: %{y:.2f} ' + (unidad if unidad else '') + '<br>Proporción: %{customdata:.2f}%<extra></extra>',
+                            hovertemplate='%{x}<br>Aporte: %{y:.2f} {label}<extra></extra>',
                         ))
                         fig.update_layout(
                             xaxis_title="Ingrediente",
-                            yaxis_title=f"Aporte de {nut} ({unidad})" if unidad else f"Aporte de {nut}",
-                            title=f"Aporte de cada ingrediente a {nut} ({unidad})" if unidad else f"Aporte de cada ingrediente a {nut}"
+                            yaxis_title=f"Aporte de {nut} ({label})",
+                            title=f"Aporte de cada ingrediente a {nut} ({label})"
                         )
                         st.plotly_chart(fig, use_container_width=True)
-                        st.markdown(f"**Total de {nut} en la dieta:** {tabla[nut].iloc[-1]:.2f} {unidad}")
+                        st.markdown(
+                            f"Puedes ajustar la unidad para visualizar el aporte en la escala más útil para tu análisis."
+                        )
 
+            # ---- TAB 3 Shadow price con selector de unidad y todos los ingredientes ----
             with subtab3:
-                st.markdown("#### Precio sombra por nutriente (Shadow Price)")
-                shadow_prices = {}
-                for nut in nutrientes_seleccionados:
-                    min_price = np.inf
-                    best_ing = None
-                    for ing in ingredientes_seleccionados:
-                        row = df_formula[df_formula["Ingrediente"] == ing].iloc[0]
-                        contenido = pd.to_numeric(row[nut], errors="coerce")
-                        precio = row["precio"]
-                        if pd.notnull(contenido) and contenido > 0 and pd.notnull(precio):
-                            price_per_unit = precio / contenido
-                            if price_per_unit < min_price:
-                                min_price = price_per_unit
-                                best_ing = ing
-                    shadow_prices[nut] = (min_price if min_price!=np.inf else np.nan, best_ing)
-                unidad = [unidades_dict.get(nut, "") for nut in nutrientes_seleccionados]
-                df_shadow = pd.DataFrame({
-                    "Nutriente": nutrientes_seleccionados,
-                    "Precio sombra (USD/unidad)": [shadow_prices[nut][0] for nut in nutrientes_seleccionados],
-                    "Ingrediente más barato": [shadow_prices[nut][1] for nut in nutrientes_seleccionados],
-                    "Unidad": unidad,
-                })
-                st.dataframe(df_shadow.style.format({"Precio sombra (USD/unidad)": "{:.4f}"}), use_container_width=True)
-                fig_shadow = go.Figure()
-                fig_shadow.add_trace(go.Bar(
-                    x=df_shadow["Nutriente"],
-                    y=df_shadow["Precio sombra (USD/unidad)"],
-                    text=[f"{v:.4f}" for v in df_shadow["Precio sombra (USD/unidad)"]],
-                    marker_color='indigo',
-                    textposition='auto',
-                    customdata=np.stack([df_shadow["Unidad"], df_shadow["Ingrediente más barato"]], axis=-1),
-                    hovertemplate='%{x}<br>Shadow price: %{y:.4f} USD/%{customdata[0]}<br>Mejor ingrediente: %{customdata[1]}<extra></extra>',
-                ))
-                fig_shadow.update_layout(
-                    xaxis_title="Nutriente",
-                    yaxis_title="Precio sombra (USD/unidad)",
-                    title="Precio sombra por nutriente (Shadow price)",
-                )
-                st.plotly_chart(fig_shadow, use_container_width=True)
-                st.markdown(
-                    "El precio sombra por nutriente estima el costo mínimo teórico para obtener una unidad de cada nutriente en la dieta, usando el ingrediente más barato en cada caso."
-                )
+                unit_options = {
+                    'kg': ['kg', 'ton'],
+                    'g': ['g', '100g', 'kg', 'ton'],
+                    'kcal': ['kcal', '1000kcal'],
+                    '%': ['%', '100 unidades'],
+                    'unidad': ['unidad', '100 unidades', '1000 unidades', 'kg', 'ton'],
+                }
+                shadow_tab = st.tabs([nut for nut in nutrientes_seleccionados])
+                for idx, nut in enumerate(nutrientes_seleccionados):
+                    with shadow_tab[idx]:
+                        unit = unidades_dict.get(nut, "unidad")
+                        manual_unit = unit_selector(f"Unidad para {nut}", unit_options.get(unit, ["unidad", "100 unidades", "1000 unidades", "kg", "ton"]), unit_options.get(unit, ["unidad"])[0])
+                        factor, label = get_unit_factor(unit, manual_unit)
+                        precios_unit = []
+                        contenidos = []
+                        precios_ing = []
+                        for i, ing in enumerate(ingredientes_seleccionados):
+                            row = df_formula[df_formula["Ingrediente"] == ing].iloc[0]
+                            contenido = pd.to_numeric(row.get(nut, 0), errors="coerce")
+                            precio = row.get("precio", np.nan)
+                            if pd.notnull(contenido) and contenido > 0 and pd.notnull(precio):
+                                precios_unit.append(precio / contenido * factor)
+                            else:
+                                precios_unit.append(np.nan)
+                            contenidos.append(contenido)
+                            precios_ing.append(precio)
+                        df_shadow = pd.DataFrame({
+                            "Ingrediente": ingredientes_seleccionados,
+                            f"Precio por {manual_unit}": precios_unit,
+                            f"Contenido de {nut} por kg": contenidos,
+                            "Precio ingrediente (USD/kg)": precios_ing,
+                        })
+                        min_idx = df_shadow[f"Precio por {manual_unit}"].idxmin()
+                        df_shadow["Es el más barato"] = ["✅" if i == min_idx else "" for i in df_shadow.index]
+                        st.dataframe(df_shadow.style.format({f"Precio por {manual_unit}": "{:.4f}"}), use_container_width=True)
+                        bar_colors = ['green' if i == min_idx else 'royalblue' for i in range(len(df_shadow))]
+                        fig_shadow = go.Figure()
+                        fig_shadow.add_trace(go.Bar(
+                            x=df_shadow["Ingrediente"],
+                            y=df_shadow[f"Precio por {manual_unit}"],
+                            marker_color=bar_colors,
+                            text=[f"{v:.4f}" for v in df_shadow[f"Precio por {manual_unit}"]],
+                            textposition='auto',
+                            customdata=np.stack([df_shadow["Es el más barato"]], axis=-1),
+                            hovertemplate='%{x}<br>Precio sombra: %{y:.4f} {label}<br>%{customdata[0]}<extra></extra>',
+                        ))
+                        fig_shadow.update_layout(
+                            xaxis_title="Ingrediente",
+                            yaxis_title=label,
+                            title=f"Precio sombra y costo por ingrediente para {nut}",
+                        )
+                        st.plotly_chart(fig_shadow, use_container_width=True)
+                        st.markdown(
+                            f"**El precio sombra de {nut} es el menor costo posible para obtener una unidad de este nutriente usando el ingrediente más barato en la fórmula.**\n\n"
+                            f"- Puedes ajustar la unidad para mejorar la visualización.\n"
+                            f"- El ingrediente marcado con ✅ aporta el precio sombra."
+                        )
 
             # --- GUARDAR ESCENARIO ---
             st.markdown("---")
@@ -456,7 +637,7 @@ with tab1:
                     "nutrientes": nutrientes_seleccionados,
                     "data_formula": data_formula,
                     "tabla": tabla.to_dict(),
-                    "precio_promedio_nutriente": {},  # no usado
+                    "unidades_dict": unidades_dict,
                     "costo_total": float(tabla["Costo proporcional (USD/kg)"].iloc[-1]) * 1000  # USD/ton,
                 }
                 escenarios.append(escenario)
